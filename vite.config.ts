@@ -34,6 +34,14 @@ export default defineConfig({
   server: {
     // Cho phép truy cập từ mọi host (cần khi expose qua Cloudflare Tunnel / ngrok)
     allowedHosts: true,
+    // Proxy /api/* sang backend Express (chạy ở port 3000) — frontend gọi /api/tong-quan
+    // không cần quan tâm backend ở đâu, không bị CORS.
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+    },
   },
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.

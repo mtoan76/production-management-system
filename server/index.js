@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 
 import tongQuanRouter from "./routes/tong-quan.js";
 import duongLoRouter from "./routes/duong-lo.js";
+import baoCaoRouter from "./routes/bao-cao.js";
 
 dotenv.config();
 
@@ -18,6 +19,7 @@ app.get("/health", (_req, res) => res.json({ ok: true, ts: new Date().toISOStrin
 
 app.use("/api", tongQuanRouter);
 app.use("/api", duongLoRouter);
+app.use("/api/bao-cao", baoCaoRouter);
 
 app.use((err, _req, res, _next) => {
   console.error("[API ERROR]", err);

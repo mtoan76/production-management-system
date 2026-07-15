@@ -239,12 +239,16 @@ const HISTORY_STATUS_CFG: Record<HistoryStatus, { badge: string; textColor: stri
   "Nháp":        { badge:"bg-gray-100 border border-gray-200",   textColor:"text-gray-600",   dot:"bg-gray-400" },
 };
 
-function HistoryStatusBadge({ status }: { status: HistoryStatus }) {
-  const cfg = HISTORY_STATUS_CFG[status];
+function HistoryStatusBadge({ status }: { status: string }) {
+  // Fallback an toàn: nếu status không có trong HISTORY_STATUS_CFG (vd: từ DB trả về "Bình thường"/"Cảnh báo"/"Nghiêm trọng")
+  // thì dùng config mặc định (xanh lá) để không crash trang.
+  const cfg = HISTORY_STATUS_CFG[status as HistoryStatus] ?? HISTORY_STATUS_CFG["Hoàn thành"];
+  const isFallback = !(HISTORY_STATUS_CFG[status as HistoryStatus]);
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${cfg.badge} ${cfg.textColor}`}>
       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
       {status}
+      {isFallback && <span className="text-[10px] opacity-50">(?)</span>}
     </span>
   );
 }
@@ -1008,8 +1012,8 @@ function HistoryScreen({ onOpenHistory }: { onOpenHistory?: (id: number) => void
           <table className="w-full text-sm text-left">
             <thead>
               <tr>
-                <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap">Ngày làm việc</th>
-                <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap">Giờ nộp</th>
+                <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap">Ngày</th>
+                <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap">Thời gian</th>
                 <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap">Ca</th>
                 <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100">Đường lò</th>
                 <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100">Đơn vị thi công</th>
@@ -1018,30 +1022,35 @@ function HistoryScreen({ onOpenHistory }: { onOpenHistory?: (id: number) => void
               </tr>
             </thead>
             <tbody>
-              {paginated.map(item => (
-                <tr
-                  key={item.report_id}
-                  onClick={() => openDetail(item.report_id)}
-                  className="border-b last:border-0 border-gray-100 hover:bg-gray-50/80 transition-colors cursor-pointer"
-                >
-                  <td className="px-6 py-4 font-medium text-gray-800 whitespace-nowrap align-top">
-                    {item.ngay ? item.ngay.split("-").reverse().join("/") : <span className="text-gray-400 italic">—</span>}
-                  </td>
-                  <td className="px-6 py-4 text-gray-600 whitespace-nowrap align-top text-xs">{fmtDateTime(item.created_at)}</td>
-                  <td className="px-6 py-4 text-gray-700 whitespace-nowrap align-top">{item.ca ?? <span className="text-gray-400">—</span>}</td>
-                  <td className="px-6 py-4 text-gray-700 max-w-[260px] align-top">
-                    <div>{item.duong_lo || <span className="text-gray-400 italic">—</span>}</div>
-                    {item.so_dong_ai > 1 && (
-                      <span className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                        +{item.so_dong_ai - 1} dòng
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 text-gray-700 align-top">{item.don_vi_thi_cong || <span className="text-gray-400 italic">—</span>}</td>
-                  <td className="px-6 py-4 text-gray-700 whitespace-nowrap align-top">{item.nguoi_bao_cao || <span className="text-gray-400 italic">—</span>}</td>
-                  <td className="px-6 py-4 align-top"><HistoryStatusBadge status={item.tinh_trang as any} /></td>
-                </tr>
-              ))}
+              {paginated.map(item => {
+                const [datePart, timePart] = fmtDateTime(item.created_at).split(" ");
+                return (
+                  <tr
+                    key={item.report_id}
+                    onClick={() => openDetail(item.report_id)}
+                    className="border-b last:border-0 border-gray-100 hover:bg-gray-50/80 transition-colors cursor-pointer"
+                  >
+                    <td className="px-6 py-4 font-medium text-gray-800 whitespace-nowrap align-top text-xs">
+                      {datePart || <span className="text-gray-400 italic">—</span>}
+                    </td>
+                    <td className="px-6 py-4 text-gray-600 whitespace-nowrap align-top text-xs">
+                      {timePart || <span className="text-gray-400 italic">—</span>}
+                    </td>
+                    <td className="px-6 py-4 text-gray-700 whitespace-nowrap align-top">{item.ca ?? <span className="text-gray-400">—</span>}</td>
+                    <td className="px-6 py-4 text-gray-700 max-w-[260px] align-top">
+                      <div>{item.duong_lo || <span className="text-gray-400 italic">—</span>}</div>
+                      {item.so_dong_ai > 1 && (
+                        <span className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                          +{item.so_dong_ai - 1} dòng
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-gray-700 align-top">{item.don_vi_thi_cong || <span className="text-gray-400 italic">—</span>}</td>
+                    <td className="px-6 py-4 text-gray-700 whitespace-nowrap align-top">{item.nguoi_bao_cao || <span className="text-gray-400 italic">—</span>}</td>
+                    <td className="px-6 py-4 align-top"><HistoryStatusBadge status={item.tinh_trang as any} /></td>
+                  </tr>
+                );
+              })}
               {paginated.length === 0 && !loading && (
                 <tr><td colSpan={7} className="px-6 py-16 text-center text-sm text-gray-400">{errorMsg ? "" : "Chưa có báo cáo nào trong hệ thống."}</td></tr>
               )}
@@ -1140,17 +1149,33 @@ function HistoryDetailModal({ historyId, onClose }: { historyId: number | null; 
   const aiRows = detail?.ai_output ?? [];
   const duongLoRows = detail?.duong_lo ?? [];
   const textRaw = detail?.text_raw;
-  const fmtDateTime = (iso?: string) => {
-    if (!iso) return "—";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+  // Helper format ngày/giờ — chấp nhận cả ISO datetime lẫn "yyyy-mm-dd"
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const parseDate = (s?: string | null): Date | null => {
+    if (!s) return null;
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
   };
-  const fmtDateOnly = (date?: string | null) => {
-    if (!date) return "—";
-    return date.split("-").reverse().join("/");
+  const fmtDate = (date?: string | null) => {
+    const d = parseDate(date);
+    if (!d) return "—";
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
   };
+  const fmtTime = (date?: string | null) => {
+    const d = parseDate(date);
+    if (!d) return "—";
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const splitDateTime = (date?: string | null) => {
+    const d = parseDate(date);
+    if (!d) return ["—", "—"];
+    return [
+      `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`,
+      `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+    ];
+  };
+
   // Tổng hợp "worst" tinh_trang
   const worstStatus = (() => {
     const order: Record<string, number> = { "Nghiêm trọng": 3, "Cảnh báo": 2, "Bình thường": 1 };
@@ -1164,6 +1189,8 @@ function HistoryDetailModal({ historyId, onClose }: { historyId: number | null; 
     return best;
   })();
 
+  const [ngayGui, gioGui] = splitDateTime(detail?.report?.created_at);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-6"
@@ -1171,29 +1198,34 @@ function HistoryDetailModal({ historyId, onClose }: { historyId: number | null; 
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-[1200px] max-h-[92vh] overflow-y-auto p-8 flex flex-col gap-6"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-[1280px] max-h-[92vh] overflow-y-auto p-8 flex flex-col gap-6"
         onClick={e => e.stopPropagation()}
       >
       {/* Header */}
-      <div className="flex flex-col gap-2 pb-5 border-b border-gray-200">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-              Chi tiết báo cáo
-            </h1>
-            <p className="text-xs text-gray-500 mt-1">
-              Mã báo cáo: <span className="font-mono font-semibold">#{historyId}</span>
-              {" · "}Gửi lúc: {fmtDateTime(detail?.report?.created_at)}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            title="Đóng"
-            className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-          >
-            <X size={18} strokeWidth={2} />
-          </button>
+      <div className="flex items-center justify-between flex-wrap gap-3 pb-5 border-b border-gray-200">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+            Chi tiết báo cáo
+          </h1>
+          <p className="text-xs text-gray-500 mt-1 flex items-center gap-3 flex-wrap">
+            <span>Mã báo cáo: <span className="font-mono font-semibold">#{historyId}</span></span>
+            <span className="text-gray-300">|</span>
+            <span className="inline-flex items-center gap-1">
+              <Clock size={11} />
+              Gửi lúc:&nbsp;
+              <span className="font-semibold">{ngayGui}</span>
+              <span className="text-gray-400">lúc</span>
+              <span className="font-semibold">{gioGui}</span>
+            </span>
+          </p>
         </div>
+        <button
+          onClick={onClose}
+          title="Đóng"
+          className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+        >
+          <X size={18} strokeWidth={2} />
+        </button>
       </div>
 
       {loading && (
@@ -1208,168 +1240,201 @@ function HistoryDetailModal({ historyId, onClose }: { historyId: number | null; 
       {!loading && !errorMsg && detail && (
         <>
           {/* Thông tin báo cáo (trên cùng, full width) */}
-          <div className="bg-white rounded-2xl border border-gray-200 p-6">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Thông tin báo cáo</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6">
-              <div>
-                <p className="text-xs text-gray-400 mb-1">Ngày làm việc</p>
-                <p className="text-sm font-bold text-gray-900">{fmtDateOnly(firstAi?.ngay)}</p>
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            <div className="px-6 pt-4 pb-3 border-b border-gray-100">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Thông tin báo cáo</p>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-5 divide-x divide-gray-100">
+              <div className="px-6 py-4">
+                <p className="text-[11px] text-gray-400 mb-1 uppercase tracking-wide">Ca</p>
+                <p className="text-base font-bold text-gray-900">{firstAi?.ca ?? "—"}</p>
               </div>
-              <div>
-                <p className="text-xs text-gray-400 mb-1">Ca</p>
-                <p className="text-sm font-bold text-gray-900">{firstAi?.ca ?? "—"}</p>
+              <div className="px-6 py-4">
+                <p className="text-[11px] text-gray-400 mb-1 uppercase tracking-wide">Đơn vị thi công</p>
+                <p className="text-sm font-bold text-gray-900 leading-tight">{firstAi?.don_vi_thi_cong || "—"}</p>
               </div>
-              <div>
-                <p className="text-xs text-gray-400 mb-1">Đơn vị thi công</p>
-                <p className="text-sm font-bold text-gray-900">{firstAi?.don_vi_thi_cong || "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-400 mb-1">Người báo cáo</p>
+              <div className="px-6 py-4">
+                <p className="text-[11px] text-gray-400 mb-1 uppercase tracking-wide">Người báo cáo</p>
                 <p className="text-sm font-bold text-gray-900">{firstAi?.nguoi_bao_cao || "—"}</p>
               </div>
-              <div>
-                <p className="text-xs text-gray-400 mb-1">Số dòng AI</p>
-                <p className="text-sm font-bold text-gray-900">{aiRows.length}</p>
+              <div className="px-6 py-4">
+                <p className="text-[11px] text-gray-400 mb-1 uppercase tracking-wide">Số dòng AI</p>
+                <p className="text-base font-bold text-blue-700">{aiRows.length}</p>
               </div>
-              <div>
-                <p className="text-xs text-gray-400 mb-1">Trạng thái</p>
-                <HistoryStatusBadge status={worstStatus as any} />
+              <div className="px-6 py-4">
+                <p className="text-[11px] text-gray-400 mb-1 uppercase tracking-wide">Trạng thái</p>
+                <HistoryStatusBadge status={worstStatus} />
               </div>
             </div>
           </div>
 
-          {/* Bên trái: raw data (Excel + text) | Bên phải: AI output */}
+          {/* 2 log panels: bên trái raw data, bên phải AI output */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
             {/* LEFT: Dữ liệu gốc */}
-            <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-5">
               {/* Dữ liệu từ file Excel (nhat_ky_duong_lo) */}
-              <div className="bg-white rounded-2xl border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                    Dữ liệu từ file (Excel) — nhat_ky_duong_lo
-                  </p>
+              <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100" style={{ background: "#F8FAFC" }}>
+                  <div className="flex items-center gap-2">
+                    <FileText size={14} className="text-blue-600" />
+                    <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                      Dữ liệu từ file (Excel)
+                    </p>
+                  </div>
                   <span className="text-[11px] font-semibold text-gray-400">{duongLoRows.length} dòng</span>
                 </div>
-                {duongLoRows.length === 0 ? (
-                  <p className="text-sm text-gray-400 italic">Không có dữ liệu Excel cho báo cáo này.</p>
-                ) : (
-                  <div className="border border-gray-100 rounded-xl overflow-x-auto max-h-[320px] overflow-y-auto">
-                    <table className="w-full text-xs text-left">
-                      <thead className="sticky top-0 bg-gray-50">
-                        <tr>
-                          <th className="px-3 py-2 font-semibold text-gray-500">Ngày</th>
-                          <th className="px-3 py-2 font-semibold text-gray-500">Ca</th>
-                          <th className="px-3 py-2 font-semibold text-gray-500">Đường lò</th>
-                          <th className="px-3 py-2 font-semibold text-gray-500">ĐV thi công</th>
-                          <th className="px-3 py-2 font-semibold text-gray-500 text-right">SL (tấn)</th>
-                          <th className="px-3 py-2 font-semibold text-gray-500 text-right">Đào (m)</th>
-                          <th className="px-3 py-2 font-semibold text-gray-500 text-right">Xén (m)</th>
-                          <th className="px-3 py-2 font-semibold text-gray-500 text-right">Chống (m)</th>
-                          <th className="px-3 py-2 font-semibold text-gray-500 text-right">Khấu (m)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {duongLoRows.map((r: any) => (
-                          <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50/50">
-                            <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{fmtDateOnly(r.ngay)}</td>
-                            <td className="px-3 py-2 text-gray-700">{r.ca ?? "—"}</td>
-                            <td className="px-3 py-2 text-gray-700">{r.duong_lo || "—"}</td>
-                            <td className="px-3 py-2 text-gray-700">{r.don_vi_thi_cong || "—"}</td>
-                            <td className="px-3 py-2 font-semibold text-gray-900 text-right">{Number(r.san_luong_than || 0).toLocaleString("vi-VN")}</td>
-                            <td className="px-3 py-2 text-right">{Number(r.dao_lo_thuc_hien_m || 0)}</td>
-                            <td className="px-3 py-2 text-right">{Number(r.xen_lo_thuc_hien_m || 0)}</td>
-                            <td className="px-3 py-2 text-right">{Number(r.chong_thuc_hien_m || 0)}</td>
-                            <td className="px-3 py-2 text-right">{Number(r.khau_lo_thuc_hien_m || 0)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                <div className="p-5">
+                  {duongLoRows.length === 0 ? (
+                    <p className="text-sm text-gray-400 italic py-2">Báo cáo này không có dữ liệu Excel.</p>
+                  ) : (
+                    <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                      {duongLoRows.map((r: any, idx: number) => (
+                        <div key={r.id} className="rounded-lg border border-gray-100 p-3" style={{ background: "#FAFAFA" }}>
+                          <div className="flex items-center gap-2 flex-wrap mb-2">
+                            <span className="text-xs font-bold text-gray-900">{fmtDate(r.ngay)}</span>
+                            <span className="text-[10px] text-gray-400">·</span>
+                            <span className="text-xs text-gray-600">Ca {r.ca ?? "—"}</span>
+                            {r.duong_lo && (
+                              <>
+                                <span className="text-[10px] text-gray-400">·</span>
+                                <span className="text-xs font-semibold text-blue-700">{r.duong_lo}</span>
+                              </>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-5 gap-1.5 text-center text-[11px]">
+                            <div className="bg-white rounded px-1 py-1 border border-gray-100">
+                              <div className="font-bold text-blue-700 text-sm">{Number(r.san_luong_than || 0).toLocaleString("vi-VN")}</div>
+                              <div className="text-gray-400 text-[9px]">SL (tấn)</div>
+                            </div>
+                            <div className="bg-white rounded px-1 py-1 border border-gray-100">
+                              <div className="font-bold text-gray-900 text-sm">{Number(r.dao_lo_thuc_hien_m || 0)}</div>
+                              <div className="text-gray-400 text-[9px]">Đào (m)</div>
+                            </div>
+                            <div className="bg-white rounded px-1 py-1 border border-gray-100">
+                              <div className="font-bold text-gray-900 text-sm">{Number(r.xen_lo_thuc_hien_m || 0)}</div>
+                              <div className="text-gray-400 text-[9px]">Xén (m)</div>
+                            </div>
+                            <div className="bg-white rounded px-1 py-1 border border-gray-100">
+                              <div className="font-bold text-gray-900 text-sm">{Number(r.chong_thuc_hien_m || 0)}</div>
+                              <div className="text-gray-400 text-[9px]">Chống (m)</div>
+                            </div>
+                            <div className="bg-white rounded px-1 py-1 border border-gray-100">
+                              <div className="font-bold text-orange-600 text-sm">{Number(r.khau_lo_thuc_hien_m || 0)}</div>
+                              <div className="text-gray-400 text-[9px]">Khấu (m)</div>
+                            </div>
+                          </div>
+                          {r.don_vi_thi_cong && (
+                            <p className="text-[11px] text-gray-500 mt-2">ĐV thi công: {r.don_vi_thi_cong}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Nội dung text gốc (nhat_ky_text_raw) */}
-              <div className="bg-white rounded-2xl border border-gray-200 p-6">
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
-                  Nội dung báo cáo dạng text — nhat_ky_text_raw
-                </p>
-                {textRaw?.noi_dung ? (
-                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap rounded-xl p-4 border border-gray-100" style={{ background:"#F8FAFC" }}>
-                    {textRaw.noi_dung}
-                  </p>
-                ) : (
-                  <p className="text-sm text-gray-400 italic">Báo cáo này không có nội dung text (chỉ có dữ liệu từ file Excel).</p>
-                )}
+              <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100" style={{ background: "#F8FAFC" }}>
+                  <div className="flex items-center gap-2">
+                    <FileText size={14} className="text-orange-600" />
+                    <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                      Nội dung text gốc
+                    </p>
+                  </div>
+                  <span className="text-[11px] font-semibold text-gray-400">{textRaw ? "1 đoạn" : "—"}</span>
+                </div>
+                <div className="p-5">
+                  {textRaw?.noi_dung ? (
+                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap rounded-lg p-3 border border-gray-100" style={{ background:"#F8FAFC" }}>
+                      {textRaw.noi_dung}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic py-2">Báo cáo này không có nội dung text (chỉ có dữ liệu từ file Excel).</p>
+                  )}
+                </div>
               </div>
             </div>
 
             {/* RIGHT: Dữ liệu AI (nhat_ky_ai_output) */}
-            <div className="bg-white rounded-2xl border border-gray-200 p-6 flex flex-col gap-5">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-bold text-gray-900">Báo cáo phân tích AI</p>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 border border-blue-200 text-blue-700">
-                  <Sparkles size={11} />
-                  {aiRows.length} dòng AI
+            <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100" style={{ background: "linear-gradient(to right, #EFF6FF, #F8FAFC)" }}>
+                <div className="flex items-center gap-2">
+                  <Sparkles size={14} className="text-blue-600" />
+                  <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Báo cáo phân tích AI
+                  </p>
+                </div>
+                <span className="text-[11px] font-semibold text-blue-700 bg-white px-2 py-0.5 rounded-full border border-blue-200">
+                  {aiRows.length} dòng
                 </span>
               </div>
+              <div className="p-5">
+                {aiRows.length === 0 ? (
+                  <p className="text-sm text-gray-400 italic py-2">Chưa có dữ liệu AI cho báo cáo này.</p>
+                ) : (
+                  <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
+                    {aiRows.map((row: any, idx: number) => (
+                      <div key={row.id ?? idx} className="rounded-xl border border-gray-200 p-4 bg-white">
+                        <div className="flex items-start justify-between gap-3 mb-3 pb-3 border-b border-gray-100">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-bold text-gray-900">
+                              #{idx + 1}. {row.ten_lo_vi_tri || row.duong_lo || "—"}
+                            </p>
+                            <p className="text-[11px] text-gray-500 mt-1 flex items-center gap-2 flex-wrap">
+                              {row.ngay && <span>{fmtDate(row.ngay)}</span>}
+                              {row.ca != null && <span className="text-gray-300">·</span>}
+                              {row.ca != null && <span>Ca {row.ca}</span>}
+                              {row.don_vi_thi_cong && <><span className="text-gray-300">·</span><span>{row.don_vi_thi_cong}</span></>}
+                              {row.nguoi_bao_cao && <><span className="text-gray-300">·</span><span>{row.nguoi_bao_cao}</span></>}
+                            </p>
+                          </div>
+                          <StatusPill status={row.tinh_trang} />
+                        </div>
 
-              {aiRows.length === 0 ? (
-                <p className="text-sm text-gray-400 italic">Chưa có dữ liệu AI cho báo cáo này.</p>
-              ) : (
-                aiRows.map((row: any, idx: number) => (
-                  <div key={row.id ?? idx} className="rounded-xl border border-gray-100 p-4" style={{ background: "#F8FAFC" }}>
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-bold text-gray-900 truncate">{row.ten_lo_vi_tri || row.duong_lo || "—"}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          Ca {row.ca ?? "—"} · {fmtDateOnly(row.ngay)}
-                          {row.don_vi_thi_cong && ` · ${row.don_vi_thi_cong}`}
-                        </p>
-                      </div>
-                      <StatusPill status={row.tinh_trang} />
-                    </div>
+                        {row.cong_viec_tien_do && (
+                          <div className="mb-3">
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">📋 Công việc / Tiến độ</p>
+                            <p className="text-xs text-gray-700 leading-relaxed">{row.cong_viec_tien_do}</p>
+                          </div>
+                        )}
 
-                    {row.cong_viec_tien_do && (
-                      <div className="mb-2">
-                        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide">Công việc / Tiến độ</p>
-                        <p className="text-xs text-gray-700 mt-0.5 leading-relaxed">{row.cong_viec_tien_do}</p>
-                      </div>
-                    )}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                          <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-center">
+                            <p className="text-base font-black text-blue-700">{Number(row.san_luong_tan || 0).toLocaleString("vi-VN")}</p>
+                            <p className="text-[10px] text-blue-600 mt-0.5 font-semibold">tấn than</p>
+                          </div>
+                          <div className="rounded-lg bg-orange-50 border border-orange-100 px-3 py-2 text-center">
+                            <p className="text-base font-black text-orange-600">{Number(row.tien_do_dao_lo || 0)}</p>
+                            <p className="text-[10px] text-orange-600 mt-0.5 font-semibold">mét đào</p>
+                          </div>
+                          <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-center">
+                            <p className="text-base font-black text-gray-900">{Number(row.so_lao_dong || 0)}</p>
+                            <p className="text-[10px] text-gray-500 mt-0.5 font-semibold">lao động</p>
+                          </div>
+                          <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-center">
+                            <p className="text-sm font-bold text-gray-700 truncate" title={row.bo_tri_lao_dong}>{row.bo_tri_lao_dong || "—"}</p>
+                            <p className="text-[10px] text-gray-500 mt-0.5 font-semibold">bố trí</p>
+                          </div>
+                        </div>
 
-                    <div className="grid grid-cols-4 gap-2 mb-2">
-                      <div className="rounded-lg bg-white border border-gray-100 px-3 py-2 text-center">
-                        <p className="text-sm font-bold text-blue-700">{Number(row.san_luong_tan || 0).toLocaleString("vi-VN")}</p>
-                        <p className="text-[10px] text-gray-500 mt-0.5">tấn</p>
-                      </div>
-                      <div className="rounded-lg bg-white border border-gray-100 px-3 py-2 text-center">
-                        <p className="text-sm font-bold text-orange-600">{Number(row.tien_do_dao_lo || 0)}</p>
-                        <p className="text-[10px] text-gray-500 mt-0.5">mét đào</p>
-                      </div>
-                      <div className="rounded-lg bg-white border border-gray-100 px-3 py-2 text-center">
-                        <p className="text-sm font-bold text-gray-900">{Number(row.so_lao_dong || 0)}</p>
-                        <p className="text-[10px] text-gray-500 mt-0.5">LĐ</p>
-                      </div>
-                      <div className="rounded-lg bg-white border border-gray-100 px-3 py-2 text-center">
-                        <p className="text-xs font-bold text-gray-700 truncate" title={row.bo_tri_lao_dong}>{row.bo_tri_lao_dong || "—"}</p>
-                        <p className="text-[10px] text-gray-500 mt-0.5">bố trí</p>
-                      </div>
-                    </div>
+                        {row.ghi_chu && (
+                          <div className="text-xs text-gray-600 mb-2 px-3 py-1.5 rounded bg-gray-50 border border-gray-100">
+                            <span className="text-gray-400 font-semibold">Ghi chú:</span> {row.ghi_chu}
+                          </div>
+                        )}
 
-                    {row.ghi_chu && (
-                      <p className="text-xs text-gray-600 mb-2">
-                        <span className="text-gray-400 font-semibold">Ghi chú:</span> {row.ghi_chu}
-                      </p>
-                    )}
-
-                    {row.noi_dung_canh_bao && !normalizeVN(row.noi_dung_canh_bao).includes("khong co") && !normalizeVN(row.noi_dung_canh_bao).includes("khong co gi") && (
-                      <div className="flex items-start gap-2 mt-2 px-3 py-2 rounded-lg" style={{ background: "#FEF2F2" }}>
-                        <AlertTriangle size={13} color="#DC2626" className="mt-0.5 flex-shrink-0" />
-                        <p className="text-xs" style={{ color: "#991B1B" }}>{row.noi_dung_canh_bao}</p>
+                        {row.noi_dung_canh_bao && !normalizeVN(row.noi_dung_canh_bao).includes("khong co") && (
+                          <div className="flex items-start gap-2 px-3 py-2 rounded-lg border" style={{ background: "#FEF2F2", borderColor: "#FECACA" }}>
+                            <AlertTriangle size={13} color="#DC2626" className="mt-0.5 flex-shrink-0" />
+                            <p className="text-xs" style={{ color: "#991B1B" }}>{row.noi_dung_canh_bao}</p>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    ))}
                   </div>
-                ))
-              )}
+                )}
+              </div>
             </div>
           </div>
         </>
@@ -2489,9 +2554,28 @@ function AlertScreen({ initialAlertId }: { initialAlertId?: number | null }) {
 }
 
 // ─── App root ─────────────────────────────────────────────
+const SCREEN_STORAGE_KEY = "pms_active_screen";
+const VALID_SCREENS: Screen[] = ["input", "history", "overview", "detail", "alerts"];
+
 export default function App() {
-  const [screen, setScreen] = useState<Screen>("overview");
+  // Khôi phục màn hình từ localStorage khi load (mặc định "overview" nếu chưa có / không hợp lệ)
+  const [screen, setScreen] = useState<Screen>(() => {
+    try {
+      const saved = localStorage.getItem(SCREEN_STORAGE_KEY);
+      if (saved && (VALID_SCREENS as string[]).includes(saved)) {
+        return saved as Screen;
+      }
+    } catch {}
+    return "overview";
+  });
   const [pendingAlertId, setPendingAlertId] = useState<number | null>(null);
+
+  // Mỗi khi screen đổi → lưu vào localStorage để F5 không bị reset
+  useEffect(() => {
+    try {
+      localStorage.setItem(SCREEN_STORAGE_KEY, screen);
+    } catch {}
+  }, [screen]);
 
   const goToAlert = (alertId: number) => {
     setPendingAlertId(alertId);

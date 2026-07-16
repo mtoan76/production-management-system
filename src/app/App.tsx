@@ -261,6 +261,7 @@ const SEVERITY_CFG: Record<SeverityType, { dot: string; badge: string; textColor
 };
 
 const ALERT_STATUS_CFG: Record<AlertStatus, { badge: string; textColor: string }> = {
+  "Mới":          { badge:"bg-orange-50 border border-orange-200", textColor:"text-orange-700" },
   "Đang xử lý":    { badge:"bg-blue-50 border border-blue-200",   textColor:"text-blue-700" },
   "Chờ tiếp nhận": { badge:"bg-gray-100 border border-gray-200",  textColor:"text-gray-600" },
   "Đã hoàn thành": { badge:"bg-green-50 border border-green-200", textColor:"text-green-700" },
@@ -298,8 +299,9 @@ const ProgressTooltip = ({ active, payload, label }: any) => {
 };
 
 // ─── Shared badge components ──────────────────────────────
-function SeverityBadge({ severity }: { severity: SeverityType }) {
-  const cfg = SEVERITY_CFG[severity];
+function SeverityBadge({ severity }: { severity: string }) {
+  // Fallback an toàn: nếu severity không có trong SEVERITY_CFG (vd: "Bình thường" từ DB) thì dùng config mặc định
+  const cfg = SEVERITY_CFG[severity as SeverityType] ?? SEVERITY_CFG["Cảnh báo"];
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${cfg.badge} ${cfg.textColor}`}>
       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
@@ -308,8 +310,9 @@ function SeverityBadge({ severity }: { severity: SeverityType }) {
   );
 }
 
-function AlertStatusBadge({ status }: { status: AlertStatus }) {
-  const cfg = ALERT_STATUS_CFG[status];
+function AlertStatusBadge({ status }: { status: string }) {
+  // Fallback an toàn: nếu status không có trong map (vd: "Mới" từ DB nhưng chưa có config), dùng "Mới" làm mặc định
+  const cfg = ALERT_STATUS_CFG[status as AlertStatus] ?? ALERT_STATUS_CFG["Mới"];
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cfg.badge} ${cfg.textColor}`}>
       {status}
@@ -431,6 +434,12 @@ const N8N_BAO_CAO_LIST_URL =
 const N8N_BAO_CAO_DETAIL_URL =
   (import.meta as any)?.env?.VITE_N8N_BAO_CAO_DETAIL_URL || "/api/bao-cao";
 
+// URL lấy danh sách cảnh báo + chi tiết 1 cảnh báo
+const N8N_CANH_BAO_LIST_URL =
+  (import.meta as any)?.env?.VITE_N8N_CANH_BAO_LIST_URL || "/api/canh-bao";
+const N8N_CANH_BAO_DETAIL_URL =
+  (import.meta as any)?.env?.VITE_N8N_CANH_BAO_DETAIL_URL || "/api/canh-bao";
+
 
 // ─── Kiểu dữ liệu trả về từ 2 truy vấn tổng quan ───────────
 type MonthSummary = {
@@ -480,6 +489,22 @@ type BaoCaoDetail = {
   ai_output: any[];
   duong_lo: any[];
   text_raw: { report_id: number; noi_dung: string } | null;
+};
+type CanhBaoListItem = {
+  id: number;
+  report_id: number;
+  ngay: string | null;
+  ca: number | null;
+  duong_lo: string | null;
+  vi_tri: string | null;
+  severity: string;
+  noi_dung: string;
+  mo_ta: string | null;
+  trang_thai: string;
+  nguoi_xu_ly: string | null;
+  ghi_chu_xu_ly: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 type SubmitStatus = "idle" | "processing" | "success" | "error";
@@ -545,55 +570,80 @@ function StatusPill({ status }: { status?: string }) {
 
 // ─── Thẻ hiển thị 1 dòng báo cáo (1 lò/vị trí) trả về từ n8n ─
 function ReportItemCard({ item }: { item: ReportItem }) {
-  const sanLuong = getSanLuong(item);
-  const hasTinhTrang = !!item.tinh_trang;
+  const sanLuong  = getSanLuong(item);
+  const tienDo    = item.tien_do_dao_lo ?? item.xen_lo_2;   // tiến độ đào lò (AI trả về)
+  const tinhTrang = item.tinh_trang;
+  const canhBao   = item.noi_dung_canh_bao;
+  const hasCanhBao = !!canhBao && !normalizeVN(canhBao).includes("khong co");
+  const isBinhThuong = !tinhTrang || normalizeVN(tinhTrang).includes("binh thuong");
 
   return (
     <div className="border border-gray-200 rounded-xl p-4 text-left">
-      <div className="flex items-start justify-between gap-3 mb-2">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">
           <p className="text-sm font-bold text-gray-900 truncate">{item.don_vi_thi_cong || "Không rõ đơn vị"}</p>
-          <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+          <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
             <span className="inline-flex items-center gap-1"><Clock size={11} />{item.ngay || "--"} · Ca {item.ca ?? "--"}</span>
             {item.nguoi_bao_cao && (
               <span className="inline-flex items-center gap-1"><User size={11} />{item.nguoi_bao_cao}</span>
             )}
+            {item.duong_lo && (
+              <span className="inline-flex items-center gap-1"><MapPin size={11} />{item.duong_lo}</span>
+            )}
           </div>
         </div>
-        {hasTinhTrang && <StatusPill status={item.tinh_trang} />}
+        {tinhTrang && <StatusPill status={tinhTrang} />}
       </div>
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600 mb-2">
-        {sanLuong !== undefined && (
-          <div><span className="text-gray-400">Sản lượng:</span> {sanLuong} tấn</div>
-        )}
-        {item.so_lao_dong !== undefined && item.so_lao_dong !== 0 && (
-          <div><span className="text-gray-400">Lao động:</span> {item.so_lao_dong}</div>
-        )}
-        {item.dao_lo_1 !== undefined && (
-          <div><span className="text-gray-400">Đào lò 1:</span> {item.dao_lo_1} m</div>
-        )}
-        {item.dao_lo_2 !== undefined && (
-          <div><span className="text-gray-400">Đào lò 2:</span> {item.dao_lo_2} m</div>
-        )}
-        {item.xen_lo_1 !== undefined && (
-          <div><span className="text-gray-400">Xén lò 1:</span> {item.xen_lo_1} m</div>
-        )}
-        {item.xen_lo_2 !== undefined && (
-          <div><span className="text-gray-400">Xén lò 2:</span> {item.xen_lo_2} m</div>
-        )}
-      </div>
-
-      {item.ghi_chu !== undefined && item.ghi_chu !== "" && (
-        <p className="text-xs text-gray-700 mb-1"><span className="text-gray-400">Ghi chú:</span> {item.ghi_chu}</p>
-      )}
-
-      {hasTinhTrang && !normalizeVN(item.tinh_trang).includes("binh thuong") && item.noi_dung_canh_bao && !normalizeVN(item.noi_dung_canh_bao).includes("khong co") && (
-        <div className="flex items-start gap-1.5 mt-2 px-2.5 py-1.5 rounded-lg" style={{ background: "#FEF2F2" }}>
-          <AlertTriangle size={13} color="#DC2626" className="mt-0.5 flex-shrink-0" />
-          <p className="text-xs" style={{ color: "#991B1B" }}>{item.noi_dung_canh_bao}</p>
+      {/* 3 stat boxes: Sản lượng + Tiến độ + Bố trí */}
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-center">
+          <p className="text-base font-black text-blue-700">
+            {sanLuong !== undefined ? sanLuong.toLocaleString("vi-VN") : "—"}
+          </p>
+          <p className="text-[10px] text-gray-500 mt-0.5">Sản lượng (tấn)</p>
         </div>
+        <div className="rounded-lg bg-orange-50 border border-orange-100 px-3 py-2 text-center">
+          <p className="text-base font-black text-orange-600">
+            {tienDo !== undefined && tienDo !== null ? tienDo : "—"}
+          </p>
+          <p className="text-[10px] text-gray-500 mt-0.5">Tiến độ đào (mét)</p>
+        </div>
+        <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-center">
+          <p className="text-sm font-bold text-gray-900 truncate" title={item.bo_tri_lao_dong || ""}>
+            {item.bo_tri_lao_dong || (item.so_lao_dong ? `${item.so_lao_dong} LĐ` : "—")}
+          </p>
+          <p className="text-[10px] text-gray-500 mt-0.5">Bố trí / LĐ</p>
+        </div>
+      </div>
+
+      {/* Ghi chú (nếu có) */}
+      {item.ghi_chu && (
+        <p className="text-xs text-gray-600 mb-2 px-2 py-1 rounded bg-gray-50 border border-gray-100">
+          <span className="text-gray-400 font-semibold">Ghi chú:</span> {item.ghi_chu}
+        </p>
       )}
+
+      {/* Cảnh báo - luôn hiển thị, "Không có" nếu rỗng */}
+      <div
+        className="flex items-start gap-1.5 mt-2 px-2.5 py-1.5 rounded-lg"
+        style={
+          hasCanhBao
+            ? { background: "#FEF2F2", border: "1px solid #FECACA" }
+            : { background: "#F9FAFB", border: "1px solid #E5E7EB" }
+        }
+      >
+        <AlertTriangle
+          size={13}
+          color={hasCanhBao ? "#DC2626" : "#9CA3AF"}
+          className="mt-0.5 flex-shrink-0"
+        />
+        <p className="text-xs" style={{ color: hasCanhBao ? "#991B1B" : "#6B7280" }}>
+          <span className="font-semibold">Cảnh báo: </span>
+          {hasCanhBao ? canhBao : "Không có"}
+        </p>
+      </div>
     </div>
   );
 }
@@ -759,12 +809,7 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
         const data = await response.json().catch(() => null);
         console.log("n8n response:", data); // 👈 để debug: mở F12 Console xem đúng shape trả về
 
-        // Chuẩn hoá dữ liệu trả về thành 1 mảng ReportItem, vì tuỳ cấu hình
-        // "Response Data" trong node Webhook mà n8n có thể trả về:
-        // - 1 mảng nhiều dòng (khi có nhiều lò/vị trí)              -> dùng thẳng
-        // - 1 object bọc { data: [...] }                            -> lấy .data
-        // - 1 object đơn (khi Webhook chỉ trả "First Entry JSON")   -> gói vào mảng 1 phần tử
-        // - rỗng/không hợp lệ                                        -> mảng rỗng
+        // Chuẩn hoá dữ liệu trả về thành 1 mảng ReportItem
         let items: ReportItem[] = [];
         if (Array.isArray(data)) {
           items = data;
@@ -772,6 +817,25 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
           items = (data as any).data;
         } else if (data && typeof data === "object" && Object.keys(data).length > 0) {
           items = [data as ReportItem];
+        }
+
+        // 🔴 Validate: n8n trả 200 OK nhưng có thể flow fail bên trong
+        // (vd: AI rate-limit, Excel parse lỗi, exception trong Code node…)
+        // Nếu flow fail, response thường rỗng hoặc có field `error` / `success: false`
+        const hasExplicitError = !!(
+          data?.error ||
+          data?.success === false ||
+          (typeof data?.message === "string" && /error|lỗi|exception/i.test(data.message))
+        );
+
+        if (items.length === 0 || hasExplicitError) {
+          setErrorMessage(
+            hasExplicitError && typeof data.error === "string"
+              ? `n8n báo lỗi: ${data.error}`
+              : "n8n đã xử lý xong nhưng không trả về dữ liệu báo cáo. Vui lòng kiểm tra workflow (đặc biệt là HTTP Request gọi AI)."
+          );
+          setStatus("error");
+          return; // ⚠️ KHÔNG xóa file/text → user sửa rồi thử lại
         }
 
         setReportItems(items);
@@ -2270,8 +2334,38 @@ function DetailScreen() {
 }
 
 // ─── Screen 4.1: Alert Modal ──────────────────────────────
-function AlertModal({ alert, onClose }: { alert: typeof ALERT_DATA[0]; onClose:()=>void }) {
+function AlertModal({ alert, onClose }: { alert: CanhBaoListItem; onClose:()=>void }) {
   const isCritical = alert.severity === "Nghiêm trọng";
+
+  // Format helpers
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  const fmtDate = (s?: string | null): string => {
+    if (!s) return "—";
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return s;
+    return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
+  };
+  const fmtTime = (s?: string | null): string => {
+    if (!s) return "—";
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return "—";
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+  };
+  const getInitials = (name: string): string =>
+    name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase() || "").join("") || "?";
+  const getColor = (name: string): string => {
+    const colors = ["#047857", "#1D4ED8", "#7C3AED", "#DC2626", "#D97706", "#0891B2", "#BE185D"];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+    return colors[Math.abs(hash) % colors.length];
+  };
+
+  // Vị trí: ghép duong_lo + vi_tri
+  const viTriParts = [
+    alert.duong_lo,
+    alert.vi_tri,
+  ].filter(Boolean);
+  const viTri = viTriParts.join(" · ") || "—";
 
   return (
     <div
@@ -2288,16 +2382,16 @@ function AlertModal({ alert, onClose }: { alert: typeof ALERT_DATA[0]; onClose:(
               title="Quay lại danh sách cảnh báo"
               className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${isCritical ? "bg-red-50 border border-red-100 text-red-500 hover:bg-red-100" : "bg-yellow-50 border border-yellow-100 text-yellow-500 hover:bg-yellow-100"}`}
             >
-               <X size={20} strokeWidth={2} />
+              <X size={20} strokeWidth={2} />
             </button>
             <div className="flex items-center gap-2">
-              <SeverityBadge severity={alert.severity} />
-              <AlertStatusBadge status={alert.status} />
+              <SeverityBadge severity={alert.severity as SeverityType} />
+              <AlertStatusBadge status={alert.trang_thai as AlertStatus} />
             </div>
           </div>
-          
+
           <h2 className="text-xl font-bold text-gray-900 pr-8">
-            {alert.content}
+            {alert.noi_dung}
           </h2>
         </div>
 
@@ -2305,22 +2399,21 @@ function AlertModal({ alert, onClose }: { alert: typeof ALERT_DATA[0]; onClose:(
         <div className="grid grid-cols-3 border-b border-gray-100 divide-x divide-gray-100">
           <div className="p-6">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">THỜI GIAN</p>
-            <p className="text-sm font-bold text-gray-900">{alert.time}</p>
-            <p className="text-sm text-gray-500 mt-0.5">{alert.date}</p>
+            <p className="text-sm font-bold text-gray-900">{fmtTime(alert.created_at)}</p>
+            <p className="text-sm text-gray-500 mt-0.5">{fmtDate(alert.ngay || alert.created_at)}</p>
           </div>
           <div className="p-6">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">VỊ TRÍ</p>
-            <p className="text-sm font-bold text-gray-900 leading-snug">{alert.location}</p>
+            <p className="text-sm font-bold text-gray-900 leading-snug">{viTri}</p>
           </div>
           <div className="p-6">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">NGƯỜI XỬ LÝ</p>
-            {alert.assignee ? (
+            {alert.nguoi_xu_ly ? (
               <div className="flex items-center gap-2 mt-1">
-                <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
-                  style={{ background: alert.assignee.color }}>
-                  {alert.assignee.initials}
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ background: getColor(alert.nguoi_xu_ly) }}>
+                  {getInitials(alert.nguoi_xu_ly)}
                 </div>
-                <span className="text-sm font-bold text-gray-900">{alert.assignee.name}</span>
+                <span className="text-sm font-bold text-gray-900">{alert.nguoi_xu_ly}</span>
               </div>
             ) : (
               <span className="text-sm text-gray-400 italic block mt-1">Chưa phân công</span>
@@ -2332,7 +2425,7 @@ function AlertModal({ alert, onClose }: { alert: typeof ALERT_DATA[0]; onClose:(
         <div className="p-6">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">MÔ TẢ CHI TIẾT</p>
           <div className="rounded-xl p-5 text-sm text-gray-700 leading-relaxed border border-gray-100" style={{ background:"#F8FAFC" }}>
-            {alert.description}
+            {alert.mo_ta || alert.noi_dung}
           </div>
         </div>
       </div>
@@ -2349,60 +2442,121 @@ const ALERT_TABS: { id: AlertTab; label: string }[] = [
 ];
 
 function AlertScreen({ initialAlertId }: { initialAlertId?: number | null }) {
-  const [tab, setTab]       = useState<AlertTab>("all");
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<typeof ALERT_DATA[0] | null>(null);
-  
+  const [tab, setTab]         = useState<AlertTab>("all");
+  const [search, setSearch]   = useState("");
+  const [selected, setSelected] = useState<CanhBaoListItem | null>(null);
+  const [list, setList]         = useState<CanhBaoListItem[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  // 1. Giảm số lượng xuống 5 cảnh báo 1 trang
-  const ITEMS_PER_PAGE = 5; 
+  const [refreshTick, setRefreshTick] = useState(0);
+  const ITEMS_PER_PAGE = 5;
 
-  // Khi được điều hướng tới với một alertId cụ thể (ví dụ từ Báo cáo tổng quan),
-  // tự động mở modal chi tiết đúng cảnh báo đó.
-  useEffect(() => {
-    if (initialAlertId == null) return;
-    const target = ALERT_DATA.find(a => a.id === initialAlertId);
-    if (target) {
-      setTab("all");
-      setSearch("");
-      setSelected(target);
-    }
-  }, [initialAlertId]);
-
-  const counts = {
-    all:      ALERT_DATA.length,
-    critical: ALERT_DATA.filter(a => a.severity === "Nghiêm trọng").length,
-    warning:  ALERT_DATA.filter(a => a.severity === "Cảnh báo").length,
-    normal:   ALERT_DATA.filter(a => a.severity === "Bình thường").length,
-    resolved: ALERT_DATA.filter(a => a.status === "Đã hoàn thành").length,
+  // Helpers format
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  const fmtDate = (s?: string | null): string => {
+    if (!s) return "—";
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return s;
+    return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
+  };
+  const fmtTime = (s?: string | null): string => {
+    if (!s) return "—";
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return "—";
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+  };
+  const getInitials = (name: string): string =>
+    name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase() || "").join("") || "?";
+  const getColor = (name: string): string => {
+    const colors = ["#047857", "#1D4ED8", "#7C3AED", "#DC2626", "#D97706", "#0891B2", "#BE185D"];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+    return colors[Math.abs(hash) % colors.length];
   };
 
-  const filtered = ALERT_DATA.filter(a => {
-    const sev = TAB_SEVERITY[tab];
-    if (sev && a.severity !== sev) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      if (!a.content.toLowerCase().includes(q) && !a.location.toLowerCase().includes(q) && !a.assignee?.name.toLowerCase().includes(q)) return false;
+  // Fetch list từ API
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setErrorMsg("");
+      try {
+        const params = new URLSearchParams();
+        if (tab !== "all") {
+          const sev = TAB_SEVERITY[tab];
+          if (sev) params.set("severity", sev);
+        }
+        if (search.trim()) params.set("search", search.trim());
+        const url = `${N8N_CANH_BAO_LIST_URL}${params.toString() ? "?" + params.toString() : ""}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Server trả về ${res.status}`);
+        const data = await res.json();
+        if (cancelled) return;
+        setList(Array.isArray(data?.data) ? data.data : []);
+      } catch (err: any) {
+        if (!cancelled) setErrorMsg(err?.message || "Lỗi tải cảnh báo");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-    return true;
-  });
+    load();
+    return () => { cancelled = true; };
+  }, [tab, search, refreshTick]);
 
-  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE) || 1;
-  const paginatedData = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  // Khi navigate từ Báo cáo tổng quan với initialAlertId → mở modal detail
+  useEffect(() => {
+    if (initialAlertId == null) return;
+    const found = list.find(a => a.id === initialAlertId);
+    if (found) {
+      setTab("all");
+      setSearch("");
+      setSelected(found);
+    }
+  }, [initialAlertId, list]);
+
+  const counts = {
+    all:      list.length,
+    critical: list.filter(a => a.severity === "Nghiêm trọng").length,
+    warning:  list.filter(a => a.severity === "Cảnh báo").length,
+    normal:   list.filter(a => a.severity === "Bình thường").length,
+    resolved: list.filter(a => a.trang_thai === "Đã hoàn thành").length,
+  };
+
+  const totalPages = Math.ceil(list.length / ITEMS_PER_PAGE) || 1;
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedData = list.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
 
   return (
     <div className="p-8 pb-12 flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold text-gray-900" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-        Trung tâm cảnh báo
-      </h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold text-gray-900" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+          Trung tâm cảnh báo
+        </h1>
+        <button
+          onClick={() => setRefreshTick(t => t + 1)}
+          disabled={loading}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors disabled:opacity-50"
+          title="Làm mới"
+        >
+          <Loader2 size={14} className={loading ? "animate-spin" : ""} />
+          Làm mới
+        </button>
+      </div>
+
+      {errorMsg && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-medium" style={{ background: "#FEF2F2", color: "#DC2626" }}>
+          <AlertTriangle size={14} />{errorMsg}
+        </div>
+      )}
 
       {/* 4 summary cards */}
       <div className="grid grid-cols-4 gap-4">
         {[
-          { label:"Tổng cảnh báo", value:counts.all,      sub:"Trong 7 ngày qua",  color:"#2563EB", bg:"#EFF6FF", Icon:BarChart2 },
-          { label:"Nghiêm trọng",  value:counts.critical, sub:"Cần xử lý ngay",    color:"#DC2626", bg:"#FEF2F2", Icon:X },
-          { label:"Cảnh báo",      value:counts.warning,  sub:"Đang theo dõi",     color:"#D97706", bg:"#FFFBEB", Icon:AlertTriangle },
-          { label:"Đã xử lý",      value:counts.resolved, sub:`Tỉ lệ ${Math.round(counts.resolved/counts.all*100)}%`, color:"#059669", bg:"#ECFDF5", Icon:CheckCircle },
+          { label:"Tổng cảnh báo", value:counts.all,      sub:"Tất cả trong hệ thống",  color:"#2563EB", bg:"#EFF6FF", Icon:BarChart2 },
+          { label:"Nghiêm trọng",  value:counts.critical, sub:"Cần xử lý ngay",         color:"#DC2626", bg:"#FEF2F2", Icon:X },
+          { label:"Cảnh báo",      value:counts.warning,  sub:"Đang theo dõi",          color:"#D97706", bg:"#FFFBEB", Icon:AlertTriangle },
+          { label:"Đã xử lý",      value:counts.resolved, sub:`Tỉ lệ ${counts.all ? Math.round(counts.resolved/counts.all*100) : 0}%`, color:"#059669", bg:"#ECFDF5", Icon:CheckCircle },
         ].map(c => (
           <div key={c.label} className="bg-white rounded-xl border border-gray-200 px-6 py-5 flex flex-col justify-center">
             <div className="flex items-center gap-3">
@@ -2420,7 +2574,7 @@ function AlertScreen({ initialAlertId }: { initialAlertId?: number | null }) {
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-        
+
         {/* Toolbar */}
         <div className="px-6 py-4 flex items-center gap-4 border-b border-gray-100">
           <div className="relative w-72">
@@ -2470,65 +2624,74 @@ function AlertScreen({ initialAlertId }: { initialAlertId?: number | null }) {
               </tr>
             </thead>
             <tbody>
-              {paginatedData.map(a => (
-                <tr 
-                  key={a.id} 
-                  onClick={() => setSelected(a)}
-                  className="border-b last:border-0 border-gray-100 hover:bg-gray-50/80 transition-colors cursor-pointer"
-                >
-                  <td className="px-6 py-4">
-                    <p className="text-sm font-bold text-gray-900" style={{ whiteSpace:"nowrap" }}>{a.time}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">{a.date}</p>
-                  </td>
-                  <td className="px-6 py-4 font-medium text-gray-800">{a.location}</td>
-                  <td className="px-6 py-4 text-gray-600">{a.content}</td>
-                  <td className="px-6 py-4"><SeverityBadge severity={a.severity} /></td>
-                  <td className="px-6 py-4"><AlertStatusBadge status={a.status} /></td>
-                  <td className="px-6 py-4">
-                    {a.assignee ? (
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
-                          style={{ background: a.assignee.color }}>
-                          {a.assignee.initials}
+              {paginatedData.map(a => {
+                const viTri = [a.duong_lo, a.vi_tri].filter(Boolean).join(" · ") || "—";
+                return (
+                  <tr
+                    key={a.id}
+                    onClick={() => setSelected(a)}
+                    className="border-b last:border-0 border-gray-100 hover:bg-gray-50/80 transition-colors cursor-pointer"
+                  >
+                    <td className="px-6 py-4">
+                      <p className="text-sm font-bold text-gray-900" style={{ whiteSpace:"nowrap" }}>{fmtTime(a.created_at)}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{fmtDate(a.ngay || a.created_at)}</p>
+                    </td>
+                    <td className="px-6 py-4 font-medium text-gray-800">{viTri}</td>
+                    <td className="px-6 py-4 text-gray-600">{a.noi_dung}</td>
+                    <td className="px-6 py-4"><SeverityBadge severity={a.severity as SeverityType} /></td>
+                    <td className="px-6 py-4"><AlertStatusBadge status={a.trang_thai as AlertStatus} /></td>
+                    <td className="px-6 py-4">
+                      {a.nguoi_xu_ly ? (
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
+                            style={{ background: getColor(a.nguoi_xu_ly) }}
+                          >
+                            {getInitials(a.nguoi_xu_ly)}
+                          </div>
+                          <span className="text-sm text-gray-700">{a.nguoi_xu_ly}</span>
                         </div>
-                        <span className="text-sm text-gray-700">{a.assignee.name}</span>
-                      </div>
-                    ) : (
-                      <span className="text-sm text-gray-400 italic">Chưa phân công</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {paginatedData.length === 0 && (
-                <tr><td colSpan={6} className="px-6 py-16 text-center text-sm text-gray-400">Không tìm thấy cảnh báo nào.</td></tr>
+                      ) : (
+                        <span className="text-sm text-gray-400 italic">Chưa phân công</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {paginatedData.length === 0 && !loading && (
+                <tr><td colSpan={6} className="px-6 py-16 text-center text-sm text-gray-400">
+                  {errorMsg ? "Lỗi tải dữ liệu — xem chi tiết ở banner phía trên." : "Chưa có cảnh báo nào trong hệ thống."}
+                </td></tr>
+              )}
+              {loading && (
+                <tr><td colSpan={6} className="px-6 py-16 text-center text-sm text-gray-400">Đang tải cảnh báo...</td></tr>
               )}
             </tbody>
           </table>
         </div>
-        
-        {/* 2. Cập nhật thanh phân trang giống ảnh thiết kế */}
+
         <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
           <p className="text-sm text-gray-500">
-            Trang {currentPage} / {totalPages}
+            Hiển thị {list.length === 0 ? 0 : (safePage - 1) * ITEMS_PER_PAGE + 1}-{Math.min(safePage * ITEMS_PER_PAGE, list.length)} trong tổng số {list.length} cảnh báo
           </p>
-          
+
           {totalPages > 1 && (
             <div className="flex items-center gap-2">
-              <button 
+              <button
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
+                disabled={safePage === 1}
                 className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Trước
               </button>
-              
+
               {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <button 
+                <button
                   key={page}
                   onClick={() => setCurrentPage(page)}
                   className={`w-8 h-8 rounded-lg text-sm font-semibold flex items-center justify-center transition-colors ${
-                    currentPage === page 
-                      ? "bg-blue-600 text-white" 
+                    safePage === page
+                      ? "bg-blue-600 text-white"
                       : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
                   }`}
                 >
@@ -2536,9 +2699,9 @@ function AlertScreen({ initialAlertId }: { initialAlertId?: number | null }) {
                 </button>
               ))}
 
-              <button 
+              <button
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
+                disabled={safePage === totalPages}
                 className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Sau

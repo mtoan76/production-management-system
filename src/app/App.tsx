@@ -347,8 +347,7 @@ const NAV: { id: Screen; label: string; Icon: any }[] = [
   { id:"alerts",   label:"Trung tâm cảnh báo", Icon: Bell },
 ];
 
-function Sidebar({ active, onNav }: { active: Screen; onNav:(s:Screen)=>void }) {
-  const criticalCount = ALERT_DATA.filter(a => a.severity === "Nghiêm trọng" && a.status !== "Đã hoàn thành").length;
+function Sidebar({ active, onNav, criticalCount = 0 }: { active: Screen; onNav:(s:Screen)=>void; criticalCount?: number }) {
   return (
     <aside className="w-[210px] flex-shrink-0 flex flex-col h-full" style={{ background:"#0F172A" }}>
       {/* Brand */}
@@ -2732,6 +2731,8 @@ export default function App() {
     return "overview";
   });
   const [pendingAlertId, setPendingAlertId] = useState<number | null>(null);
+  // Số chấm đỏ trên sidebar "Trung tâm cảnh báo" = alert Nghiêm trọng chưa xử lý
+  const [criticalAlertCount, setCriticalAlertCount] = useState(0);
 
   // Mỗi khi screen đổi → lưu vào localStorage để F5 không bị reset
   useEffect(() => {
@@ -2739,6 +2740,28 @@ export default function App() {
       localStorage.setItem(SCREEN_STORAGE_KEY, screen);
     } catch {}
   }, [screen]);
+
+  // Fetch số alert Nghiêm trọng chưa xử lý để hiển thị chấm đỏ trên sidebar
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCritical() {
+      try {
+        const res = await fetch(`${N8N_CANH_BAO_LIST_URL}?severity=${encodeURIComponent("Nghiêm trọng")}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const list: any[] = Array.isArray(data?.data) ? data.data : [];
+        const open = list.filter(a => a.trang_thai !== "Đã hoàn thành");
+        setCriticalAlertCount(open.length);
+      } catch {
+        // Im lặng, không show error
+      }
+    }
+    loadCritical();
+    // Poll mỗi 60s để badge luôn fresh
+    const interval = setInterval(loadCritical, 60000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
 
   const goToAlert = (alertId: number) => {
     setPendingAlertId(alertId);
@@ -2752,7 +2775,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ fontFamily:"'Inter',sans-serif", background:"#F4F6F8" }}>
-      <Sidebar active={screen} onNav={handleNav} />
+      <Sidebar active={screen} onNav={handleNav} criticalAlertCount={criticalAlertCount} />
       <main className="flex-1 overflow-auto min-w-0">
         {screen === "input"    && <InputScreen onNavigate={handleNav} />}
         {screen === "history"  && <HistoryScreen />}

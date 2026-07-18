@@ -413,15 +413,13 @@ function Sidebar({ active, onNav, criticalCount = 0 }: { active: Screen; onNav:(
 }
 
 // ─── URL server ──────────────────────────────────────────────────────────
-// Submit (NHẬP báo cáo mới) → gọi n8n webhook production
-// Đọc dữ liệu (overview, duong-lo, bao-cao, canh-bao) → gọi Express server
-//   vì n8n workflow đọc dữ liệu chưa được tạo, Express đã có sẵn DB connection.
-// Khi nào các webhook đọc trong n8n sẵn sàng → chuyển các URL đọc sang n8n tương tự submit.
-const N8N_BASE = "http://80.65.211.65:5678";
-
-// URL webhook n8n để NHẬP báo cáo mới (POST, nhận file + text)
+// Submit (NHẬP báo cáo mới) → Cloudflare Worker → n8n (qua DuckDNS hostname)
+//   Worker giải quyết Mixed Content: HTTPS Vercel → HTTP n8n không bị browser chặn
+// Đọc dữ liệu (overview, duong-lo, bao-cao, canh-bao) → gọi Vercel Serverless Function
+//   (Express server cũ chỉ dùng cho local dev, production dùng /api/* trên Vercel)
 const N8N_WEBHOOK_URL =
-  (import.meta as any)?.env?.VITE_N8N_WEBHOOK_URL || `${N8N_BASE}/webhook/nhap-bao-cao`;
+  (import.meta as any)?.env?.VITE_N8N_WEBHOOK_URL
+  || "https://n8n-proxy.manhtoan7620005.workers.dev/webhook/nhap-bao-cao";
 
 // URL lấy dữ liệu tổng quan — Express server (đã có sẵn, kết nối trực tiếp DB)
 const N8N_OVERVIEW_URL =

@@ -412,32 +412,40 @@ function Sidebar({ active, onNav, criticalCount = 0 }: { active: Screen; onNav:(
   );
 }
 
-// URL webhook n8n — dùng biến môi trường nếu có, mặc định trỏ vào webhook production (không có "-test")
+// ─── URL server ──────────────────────────────────────────────────────────
+// Submit (NHẬP báo cáo mới) → gọi n8n webhook production
+// Đọc dữ liệu (overview, duong-lo, bao-cao, canh-bao) → gọi Express server
+//   vì n8n workflow đọc dữ liệu chưa được tạo, Express đã có sẵn DB connection.
+// Khi nào các webhook đọc trong n8n sẵn sàng → chuyển các URL đọc sang n8n tương tự submit.
+const N8N_BASE = "http://80.65.211.65:5678";
+
+// URL webhook n8n để NHẬP báo cáo mới (POST, nhận file + text)
 const N8N_WEBHOOK_URL =
-  (import.meta as any)?.env?.VITE_N8N_WEBHOOK_URL || "http://localhost:5678/webhook-test/luu-bao-cao";
+  (import.meta as any)?.env?.VITE_N8N_WEBHOOK_URL || `${N8N_BASE}/webhook/nhap-bao-cao`;
 
-// URL webhook n8n để LẤY dữ liệu tổng quan (2 truy vấn: theo tháng + theo ngày trong tháng)
-// Webhook này là GET, nhận query param ?thang=&nam=
+// URL lấy dữ liệu tổng quan — Express server (đã có sẵn, kết nối trực tiếp DB)
 const N8N_OVERVIEW_URL =
-  (import.meta as any)?.env?.VITE_N8N_OVERVIEW_URL || "/api/tong-quan";
+  (import.meta as any)?.env?.VITE_N8N_OVERVIEW_URL || `/api/tong-quan`;
 
-// URL lấy dữ liệu đường lò (lũy kế sản lượng + tiến độ theo ngày) — để mở modal chi tiết
+// URL lấy dữ liệu đường lò — Express server
 const N8N_DUONG_LO_URL =
-  (import.meta as any)?.env?.VITE_N8N_DUONG_LO_URL || "/api/duong-lo";
+  (import.meta as any)?.env?.VITE_N8N_DUONG_LO_URL || `/api/duong-lo`;
 
-// URL lấy danh sách báo cáo đã nộp (lịch sử)
+// URL lấy danh sách báo cáo đã nộp — Express server
 const N8N_BAO_CAO_LIST_URL =
-  (import.meta as any)?.env?.VITE_N8N_BAO_CAO_LIST_URL || "/api/bao-cao";
+  (import.meta as any)?.env?.VITE_N8N_BAO_CAO_LIST_URL || `/api/bao-cao`;
 
-// URL lấy chi tiết 1 báo cáo (3 bảng: duong_lo, text_raw, ai_output)
+// URL lấy chi tiết 1 báo cáo — Express server (Express có path param :id)
 const N8N_BAO_CAO_DETAIL_URL =
-  (import.meta as any)?.env?.VITE_N8N_BAO_CAO_DETAIL_URL || "/api/bao-cao";
+  (import.meta as any)?.env?.VITE_N8N_BAO_CAO_DETAIL_URL || `/api/bao-cao`;
 
-// URL lấy danh sách cảnh báo + chi tiết 1 cảnh báo
+// URL lấy danh sách cảnh báo — Express server
 const N8N_CANH_BAO_LIST_URL =
-  (import.meta as any)?.env?.VITE_N8N_CANH_BAO_LIST_URL || "/api/canh-bao";
+  (import.meta as any)?.env?.VITE_N8N_CANH_BAO_LIST_URL || `/api/canh-bao`;
+
+// URL lấy chi tiết 1 cảnh báo — Express server (filter client-side từ list, không cần gọi riêng)
 const N8N_CANH_BAO_DETAIL_URL =
-  (import.meta as any)?.env?.VITE_N8N_CANH_BAO_DETAIL_URL || "/api/canh-bao";
+  (import.meta as any)?.env?.VITE_N8N_CANH_BAO_DETAIL_URL || `/api/canh-bao`;
 
 
 // ─── Kiểu dữ liệu trả về từ 2 truy vấn tổng quan ───────────
@@ -773,6 +781,9 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleSubmitReport = async () => {
+    // Guard chống double-click: state chưa kịp update thì request thứ 2 đã bắn đi
+    if (status === "processing") return;
+
     // Kiểm tra nếu người dùng chưa nhập gì cả thì cảnh báo
     if (!file && !text.trim()) {
       alert("Vui lòng tải lên tệp hoặc nhập nội dung báo cáo!");
@@ -963,7 +974,7 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
 }
 
 // ─── Screen 1.1: Lịch sử báo cáo ──────────────────────────
-function HistoryScreen({ onOpenHistory }: { onOpenHistory?: (id: number) => void }) {
+function HistoryScreen() {
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -996,7 +1007,6 @@ function HistoryScreen({ onOpenHistory }: { onOpenHistory?: (id: number) => void
 
   const openDetail = (id: number) => {
     setSelectedId(id);
-    onOpenHistory?.(id);
   };
 
   const filtered = list
@@ -1186,6 +1196,7 @@ function HistoryDetailModal({ historyId, onClose }: { historyId: number | null; 
       setLoading(true);
       setErrorMsg("");
       try {
+        // Express server hỗ trợ path param /:id nên dùng trực tiếp
         const res = await fetch(`${N8N_BAO_CAO_DETAIL_URL}/${historyId}`);
         if (!res.ok) throw new Error(`Server trả về ${res.status}`);
         const data = await res.json();
@@ -1772,7 +1783,9 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
           <div className="flex justify-between items-start w-full mb-2">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-gray-400">TIẾN ĐỘ ĐÀO LÒ LŨY KẾ</p>
-              <p className="text-[11px] text-gray-400 mt-1">Cập nhật: 10:30 AM, Hôm nay</p>
+              <p className="text-[11px] text-gray-400 mt-1">
+                {loadingOverview ? "Đang tải..." : `Cập nhật: ${new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}, Hôm nay`}
+              </p>
               <div className="mt-3">
                 <span className="text-2xl font-black text-gray-900 tracking-tight">{kpiTienDoThucTe.toLocaleString("vi-VN")}</span>
                 {kpiTienDoKeHoach > 0 && (
@@ -2503,16 +2516,24 @@ function AlertScreen({ initialAlertId }: { initialAlertId?: number | null }) {
     return () => { cancelled = true; };
   }, [tab, search, refreshTick]);
 
-  // Khi navigate từ Báo cáo tổng quan với initialAlertId → mở modal detail
+  // Khi navigate từ Báo cáo tổng quan với initialAlertId → mở modal detail.
+  // Dùng ref để chỉ mở 1 lần, tránh bị effect "list" (auto refresh) bật lại modal sau khi user đã đóng.
+  const consumedAlertIdRef = useRef<number | null>(null);
   useEffect(() => {
     if (initialAlertId == null) return;
+    if (consumedAlertIdRef.current === initialAlertId) return; // đã xử lý rồi
     const found = list.find(a => a.id === initialAlertId);
     if (found) {
+      consumedAlertIdRef.current = initialAlertId;
       setTab("all");
-      setSearch("");
       setSelected(found);
     }
   }, [initialAlertId, list]);
+
+  // Khi user đóng modal thủ công, reset consumed flag để lần click sau từ Overview mở lại được
+  useEffect(() => {
+    if (selected == null) consumedAlertIdRef.current = null;
+  }, [selected]);
 
   const counts = {
     all:      list.length,

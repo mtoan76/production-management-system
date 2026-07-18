@@ -29,7 +29,7 @@ router.get("/duong-lo", async (req, res, next) => {
             COALESCE(SUM(san_luong_tan),  0) AS san_luong_ngay,
             COALESCE(SUM(tien_do_dao_lo), 0) AS tien_do_ngay
         FROM nhat_ky_ai_output
-        WHERE duong_lo IN ('Đường lò 1', 'Đường lò 2', 'Đường lò 3')
+        WHERE duong_lo IN ('1', '2', '3')
           AND EXTRACT(MONTH FROM ngay) = $1
           AND EXTRACT(YEAR FROM ngay)  = $2
           AND ngay IS NOT NULL

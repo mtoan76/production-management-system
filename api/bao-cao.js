@@ -42,7 +42,7 @@ export default async function handler(req, res) {
         ) AS tinh_trang
       FROM nhat_ky_report r
       LEFT JOIN LATERAL (
-        SELECT * FROM nhat_ky_ai_output WHERE report_id = r.id ORDER BY id ASC LIMIT 1
+        SELECT * FROM nhat_ky_ai_output WHERE report_id = r.id ORDER BY id DESC LIMIT 1
       ) a ON true
       ORDER BY r.created_at DESC, r.id DESC
       LIMIT $1;

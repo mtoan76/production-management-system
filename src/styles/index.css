@@ -1,3 +1,67 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+
+/* ─── Mobile-specific animations & utilities ─── */
+@keyframes m-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@keyframes m-slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes m-fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-m-shimmer { animation: m-shimmer 1.5s infinite; }
+.animate-m-slideUp { animation: m-slideUp 0.32s cubic-bezier(0.32, 0.72, 0, 1); }
+.animate-m-fadeIn  { animation: m-fadeIn 0.28s ease-out; }
+
+/* Webkit/IE/FF ẩn thanh cuộn – dùng cho danh sách dọc mobile */
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* Mobile shell: bỏ tap-highlight mặc định trên iOS Safari */
+.mobile-shell button,
+.mobile-shell [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Khi hiển thị trên desktop nhưng vẫn muốn xem mobile: giới hạn chiều rộng + bo góc khung điện thoại */
+.mobile-frame {
+  max-width: 440px;
+  margin: 0 auto;
+  height: 100dvh;
+  height: 100vh;        /* fallback cho trình duyệt không hỗ trợ dvh */
+  background: #F8FAFC;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+@media (min-width: 481px) {
+  .mobile-frame {
+    margin-top: 16px;
+    margin-bottom: 16px;
+    border-radius: 36px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.35), 0 0 0 1px rgba(15,23,42,0.08);
+    height: calc(100dvh - 32px);
+    max-height: 900px;
+  }
+}
+
+/* Padding đáy có tính safe-area (iPhone home indicator, Android gesture bar) cho thanh nav dưới */
+.mobile-bottom-nav {
+  flex-shrink: 0;
+  padding-bottom: max(env(safe-area-inset-bottom), 20px);
+}

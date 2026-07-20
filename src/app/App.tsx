@@ -2734,11 +2734,11 @@ function AlertScreen({ initialAlertId }: { initialAlertId?: number | null }) {
   );
 }
 
-// ─── App root ─────────────────────────────────────────────
+// ─── App root (Desktop) ───────────────────────────────────
 const SCREEN_STORAGE_KEY = "pms_active_screen";
 const VALID_SCREENS: Screen[] = ["input", "history", "overview", "detail", "alerts"];
 
-export default function App() {
+function DesktopApp() {
   // Khôi phục màn hình từ localStorage khi load (mặc định "overview" nếu chưa có / không hợp lệ)
   const [screen, setScreen] = useState<Screen>(() => {
     try {
@@ -2804,4 +2804,13 @@ export default function App() {
       </main>
     </div>
   );
+}
+
+// ─── App root (auto-detect thiết bị) ───────────────────────
+import MobileApp from "./MobileApp";
+import { useDeviceDetect } from "./hooks/useDeviceDetect";
+
+export default function App() {
+  const isMobile = useDeviceDetect();
+  return isMobile ? <MobileApp /> : <DesktopApp />;
 }

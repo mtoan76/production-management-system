@@ -1568,6 +1568,80 @@ const CustomLineLabel = (props: any) => {
   );
 };
 
+// ─── VN date parser (API trả "DD/MM/YYYY HH:MM:SS" - JS Date() không parse được) ──
+function parseVNDate(s: string | null | undefined): Date | null {
+  if (!s) return null;
+  // Thử ISO trước
+  const iso = new Date(s);
+  if (!isNaN(iso.getTime())) return iso;
+  // Thử DD/MM/YYYY HH:MM:SS
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+  if (!m) return null;
+  const [, dd, mm, yyyy, hh = "0", mi = "0", ss = "0"] = m;
+  const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(mi), Number(ss));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// ─── Cache module-level cho Overview data ────────────────────────────────────────
+// Lưu data ở scope ngoài component → persist khi component unmount/remount (chuyển tab).
+// Chỉ fetch lại khi: cache miss cho (month, year) HOẶC user bấm nút refresh (refreshKey).
+// Reset cache khi F5/reload (vì đó là fresh page load).
+type OverviewCacheData = {
+  kpi: KpiSummary | null;
+  monthSummary: MonthSummary | null;
+  daySummary: DaySummary[];
+  monthList: any[];
+  tunnelRows: DuongLoRow[];
+};
+const overviewCache: Map<string, OverviewCacheData> = new Map();
+
+function useOverviewCache(month: number, year: number) {
+  const key = `${year}-${month}`;
+  const [data, setData] = useState<OverviewCacheData | null>(overviewCache.get(key) || null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const cacheHit = overviewCache.has(key);
+    const shouldFetch = !cacheHit || refreshKey > 0;
+
+    if (!shouldFetch) return; // Tab switch: dùng lại cache, không fetch
+
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+
+    Promise.all([
+      fetch(`${N8N_OVERVIEW_URL}?thang=${month}&nam=${year}`).then(r => r.json()),
+      fetch(`${N8N_DUONG_LO_URL}?thang=${month}&nam=${year}`).then(r => r.json()),
+    ]).then(([tongQuan, duongLo]) => {
+      if (cancelled) return;
+      const monthArr: MonthSummary[] = Array.isArray(tongQuan?.month) ? tongQuan.month : (tongQuan?.month ? [tongQuan.month] : []);
+      const dayArr: DaySummary[] = Array.isArray(tongQuan?.day) ? tongQuan.day : [];
+      const newData: OverviewCacheData = {
+        kpi: tongQuan?.kpi ?? null,
+        monthSummary: monthArr[0] ?? null,
+        daySummary: dayArr,
+        monthList: tongQuan?.month ?? [],
+        tunnelRows: duongLo?.data ?? [],
+      };
+      overviewCache.set(key, newData);
+      setData(newData);
+    }).catch(err => {
+      if (cancelled) return;
+      setError(err.message || "Lỗi tải dữ liệu");
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [month, year, refreshKey]);
+
+  const refresh = () => setRefreshKey(k => k + 1);
+  return { data, loading, error, refresh };
+}
+
 // ─── Screen 2: Overview ───────────────────────────────────
 function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => void }) {
   const ALERTS_PER_PAGE = 3;
@@ -1583,68 +1657,22 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
 
   // State cho chart modal (khi click vào số liệu chính)
   const [chartModalOpen, setChartModalOpen] = useState<null | "prod" | "prog">(null);
-  // State cho bảng chi tiết đường lò
-  const [tunnelRows, setTunnelRows] = useState<DuongLoRow[]>([]);
-  const [tunnelLoading, setTunnelLoading] = useState(false);
+  // tunnelRows, tunnelLoading, monthSummary, daySummary, kpi đã lấy từ useOverviewCache ở trên
 
-  // Fetch dữ liệu đường lò khi đổi tháng/năm
-  useEffect(() => {
-    let cancelled = false;
-    async function loadTunnels() {
-      setTunnelLoading(true);
-      try {
-        const res = await fetch(`${N8N_DUONG_LO_URL}?thang=${selectedMonth}&nam=${selectedYear}`);
-        if (!res.ok) throw new Error(`API ${res.status}`);
-        const data = await res.json();
-        if (cancelled) return;
-        setTunnelRows(data.data || []);
-      } catch (e) {
-        if (!cancelled) setTunnelRows([]);
-      } finally {
-        if (!cancelled) setTunnelLoading(false);
-      }
-    }
-    loadTunnels();
-    return () => { cancelled = true; };
-  }, [selectedMonth, selectedYear]);
-
-  // ─── Dữ liệu tổng quan THẬT, lấy từ n8n (thay cho dữ liệu giả) ───
-  const [monthSummary, setMonthSummary] = useState<MonthSummary | null>(null);
-  const [daySummary, setDaySummary] = useState<DaySummary[]>([]);
-  const [kpi, setKpi] = useState<KpiSummary | null>(null);
-  const [loadingOverview, setLoadingOverview] = useState(true);
-  const [overviewError, setOverviewError] = useState("");
-  const [refreshTick, setRefreshTick] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadOverview() {
-      setLoadingOverview(true);
-      setOverviewError("");
-      try {
-        const url = `${N8N_OVERVIEW_URL}?thang=${selectedMonth}&nam=${selectedYear}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Server trả về lỗi ${res.status}`);
-        const data = await res.json();
-        if (cancelled) return;
-        const monthArr: MonthSummary[] = Array.isArray(data?.month) ? data.month : (data?.month ? [data.month] : []);
-        const dayArr: DaySummary[] = Array.isArray(data?.day) ? data.day : [];
-        setMonthSummary(monthArr[0] ?? null);
-        setDaySummary(dayArr);
-        setKpi(data?.kpi ?? null);
-      } catch (err) {
-        console.error("Lỗi tải dữ liệu tổng quan:", err);
-        if (!cancelled) setOverviewError("Không tải được dữ liệu tổng quan. Kiểm tra n8n/API đã bật chưa.");
-      } finally {
-        if (!cancelled) setLoadingOverview(false);
-      }
-    }
-    loadOverview();
-    return () => { cancelled = true; };
-    // Refetch khi đổi tháng/năm xem, hoặc khi bấm nút "Làm mới" (refreshTick),
-    // và LUÔN chạy lại mỗi khi màn hình này được mở (component mount) — tức là
-    // sau khi nộp báo cáo mới rồi bấm "Báo cáo tổng quan", dữ liệu sẽ tự cập nhật.
-  }, [selectedMonth, selectedYear, refreshTick]);
+  // ─── Dữ liệu tổng quan - dùng hook với module-level cache ─────────────
+  // Cache persist qua các lần chuyển tab → không fetch lại khi vào lại trang.
+  // Chỉ fetch: cache miss HOẶC user bấm nút refresh.
+  const {
+    data: overviewCacheData,
+    loading: loadingOverview,
+    error: overviewError,
+    refresh: refreshOverview,
+  } = useOverviewCache(selectedMonth, selectedYear);
+  const kpi = overviewCacheData?.kpi ?? null;
+  const monthSummary = overviewCacheData?.monthSummary ?? null;
+  const daySummary = overviewCacheData?.daySummary ?? [];
+  const monthList = overviewCacheData?.monthList ?? [];
+  const tunnelRows = overviewCacheData?.tunnelRows ?? [];
 
   // Bảng dữ liệu theo ngày trong tháng, dùng cho cả 2 biểu đồ
   const dayProdChart = daySummary.map(d => ({ day: d.ngay, value: Number(d.san_luong_luy_ke) || 0 }));
@@ -1750,9 +1778,15 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
   return (
     <div className="p-8 flex flex-col gap-6 min-h-screen overflow-y-auto bg-[#F8FAFC]">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-semibold text-gray-900" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-          Báo cáo tổng quan
-        </h1>
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+            Báo cáo tổng quan
+          </h1>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Cập nhật: {new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}, Hôm nay ·{" "}
+            {chartView === "month" ? `Năm ${selectedYear}` : `Tháng ${selectedMonth}/${selectedYear}`}
+          </p>
+        </div>
 
         {/* Bộ lọc khoảng thời gian dùng chung cho cả 2 biểu đồ bên dưới */}
         <div className="flex items-center gap-2 bg-white border-2 border-blue-200 rounded-xl shadow-sm px-3 py-2">
@@ -1795,7 +1829,7 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
             </div>
           )}
           <button
-            onClick={() => setRefreshTick(t => t + 1)}
+            onClick={refreshOverview}
             disabled={loadingOverview}
             title="Làm mới dữ liệu"
             className="ml-1 flex items-center justify-center w-7 h-7 rounded-lg text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors disabled:opacity-50"
@@ -1816,18 +1850,23 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
       <div className="grid grid-cols-2 gap-6">
         {/* Card 1: Sản lượng lũy kế (gradient xanh) */}
         <div
-          className="rounded-2xl overflow-hidden shadow-lg p-6 flex flex-col"
+          onClick={() => setChartModalOpen("prod")}
+          className="rounded-2xl overflow-hidden shadow-lg p-6 flex flex-col cursor-pointer hover:shadow-2xl transition-shadow"
           style={{ background: "linear-gradient(135deg,#1E40AF,#2563EB)", boxShadow: "0 4px 20px rgba(37,99,235,0.3)" }}
+          title="Click để xem biểu đồ sản lượng chi tiết"
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setChartModalOpen("prod"); }}
         >
           <div className="flex justify-between items-start w-full mb-2">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-gray-400">SẢN LƯỢNG LŨY KẾ</p>
-              <p className="text-[11px] text-gray-400 mt-1">{loadingOverview ? "Đang tải..." : `Tháng ${selectedMonth}/${selectedYear}`}</p>
+              <p className="text-[11px] text-white/60 mt-0.5">
+                {loadingOverview ? "Đang tải..." : chartView === "month" ? `Năm ${selectedYear}` : `Tháng ${selectedMonth}/${selectedYear}`}
+              </p>
               <div className="mt-3">
                 <span
-                  onClick={() => setChartModalOpen("prod")}
-                  className="text-[36px] font-black text-white tracking-tight leading-none cursor-pointer hover:underline decoration-white/50 underline-offset-4 transition-all"
-                  title="Click để xem biểu đồ sản lượng"
+                  className="text-[36px] font-black text-white tracking-tight leading-none"
                 >
                   {Math.round(kpiSanLuong).toLocaleString("vi-VN")}
                 </span>
@@ -1867,22 +1906,25 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
           </div>
         </div>
 
-        {/* Card 2: Tiến độ đào lò lũy kế (gradient cam) */}
+        {/* Card 2: Tiến độ đào lò lũy kế (gradient cam) - click để xem biểu đồ */}
         <div
-          className="rounded-2xl overflow-hidden shadow-lg p-6 flex flex-col"
+          onClick={() => setChartModalOpen("prog")}
+          className="rounded-2xl overflow-hidden shadow-lg p-6 flex flex-col cursor-pointer hover:shadow-2xl transition-shadow"
           style={{ background: "linear-gradient(135deg,#92400E,#D97706)", boxShadow: "0 4px 20px rgba(217,119,6,0.3)" }}
+          title="Click để xem biểu đồ tiến độ chi tiết"
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setChartModalOpen("prog"); }}
         >
           <div className="flex justify-between items-start w-full mb-2">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-400">TIẾN ĐỘ ĐÀO LÒ LŨY KẾ</p>
-              <p className="text-[11px] text-gray-400 mt-1">
-                {loadingOverview ? "Đang tải..." : `Cập nhật: ${new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}, Hôm nay`}
+              <p className="text-[13px] text-white/75 font-semibold leading-tight">Tiến độ đào lò lũy kế</p>
+              <p className="text-[11px] text-white/60 mt-0.5">
+                {loadingOverview ? "Đang tải..." : chartView === "month" ? `Năm ${selectedYear}` : `Tháng ${selectedMonth}/${selectedYear}`}
               </p>
               <div className="mt-3">
                 <span
-                  onClick={() => setChartModalOpen("prog")}
-                  className="text-[36px] font-black text-white tracking-tight leading-none cursor-pointer hover:underline decoration-white/50 underline-offset-4 transition-all"
-                  title="Click để xem biểu đồ tiến độ"
+                  className="text-[36px] font-black text-white tracking-tight leading-none"
                 >
                   {Math.round(kpiTienDoThucTe).toLocaleString("vi-VN")}
                 </span>
@@ -1937,7 +1979,7 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
             </div>
           </div>
 
-          {tunnelLoading ? (
+          {loadingOverview && tunnelAggregated.length === 0 ? (
             <div className="text-center py-8 text-sm text-gray-500">Đang tải dữ liệu đường lò...</div>
           ) : tunnelAggregated.length === 0 ? (
             <div className="text-center py-8 text-sm text-gray-500">Chưa có dữ liệu đường lò trong tháng này</div>
@@ -1978,7 +2020,15 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
                           )}
                         </td>
                         <td className="px-4 py-3 text-[11px] text-gray-500 whitespace-nowrap">
-                          {t.lastReport ? new Date(t.lastReport).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}
+                          {(() => {
+                            const d = parseVNDate(t.lastReport);
+                            if (!d) return "—";
+                            const dd = String(d.getDate()).padStart(2, "0");
+                            const mm = String(d.getMonth() + 1).padStart(2, "0");
+                            const hh = String(d.getHours()).padStart(2, "0");
+                            const mi = String(d.getMinutes()).padStart(2, "0");
+                            return `${dd}/${mm} ${hh}:${mi}`;
+                          })()}
                         </td>
                       </tr>
                     );

@@ -4,8 +4,8 @@ import pool from "../db.js";
 const router = express.Router();
 
 // Mục tiêu cả năm (đọc từ .env, fallback nếu không set)
-const KE_HOACH_SAN_LUONG = Number(process.env.KE_HOACH_SAN_LUONG) || 30000;
-const KE_HOACH_TIEN_DO   = Number(process.env.KE_HOACH_TIEN_DO)   || 940;
+const KE_HOACH_SAN_LUONG = Number(process.env.KE_HOACH_SAN_LUONG) || 1000000;
+const KE_HOACH_TIEN_DO   = Number(process.env.KE_HOACH_TIEN_DO)   || 2000;
 
 function clampMonth(v, fallback) {
   const n = parseInt(v, 10);

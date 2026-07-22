@@ -1796,7 +1796,7 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
           </div>
 
           {/* Hàng Còn lại + TB cần/ngày */}
-          <div className="grid grid-cols-2 gap-3 mt-3 mb-2 p-3 rounded-xl bg-blue-50/60 border border-blue-100">
+          <div className="grid grid-cols-2 gap-3 mt-3 mb-2 p-3 rounded-xl bg-blue-50 border-2 border-blue-200">
             <div>
               <div className="text-[11px] text-gray-500 font-medium mb-0.5">Còn lại ({periodLabel})</div>
               <div className="text-base font-bold text-blue-700">
@@ -1842,7 +1842,7 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
           </div>
 
           {/* Hàng Còn lại + TB cần/ngày */}
-          <div className="grid grid-cols-2 gap-3 mt-3 mb-2 p-3 rounded-xl bg-orange-50/60 border border-orange-100">
+          <div className="grid grid-cols-2 gap-3 mt-3 mb-2 p-3 rounded-xl bg-orange-50 border-2 border-orange-200">
             <div>
               <div className="text-[11px] text-gray-500 font-medium mb-0.5">Còn lại ({periodLabel})</div>
               <div className="text-base font-bold text-orange-700">

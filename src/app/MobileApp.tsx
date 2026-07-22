@@ -29,6 +29,28 @@ const N8N_BAO_CAO_DETAIL_URL =
 const N8N_CANH_BAO_LIST_URL =
   (import.meta as any)?.env?.VITE_N8N_CANH_BAO_LIST_URL || "/api/canh-bao";
 
+// ─── VN date parser (API trả "DD/MM/YYYY HH:MM:SS" - JS Date() không parse được) ──
+function parseVNDate(s: string | null | undefined): Date | null {
+  if (!s) return null;
+  const iso = new Date(s);
+  if (!isNaN(iso.getTime())) return iso;
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+  if (!m) return null;
+  const [, dd, mm, yyyy, hh = "0", mi = "0", ss = "0"] = m;
+  const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(mi), Number(ss));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// ─── Module-level cache cho Overview data (mobile) ──────────────────────────
+type MobileOverviewCache = {
+  kpi: any | null;
+  monthSummary: any | null;
+  daySummary: any[];
+  monthList: any[];
+  tunnelRows: any[];
+};
+const mobileOverviewCache: Map<string, MobileOverviewCache> = new Map();
+
 // ─── Bảng màu dùng chung cho giao diện mobile ────────────────────────────────
 const C = {
   primary:       "#2563EB",
@@ -432,29 +454,63 @@ function MobileOverview({
   const [errorMsg, setErrorMsg] = useState("");
   const [alerts, setAlerts] = useState<CanhBaoListItem[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
+  // State cho chart modal + dữ liệu đường lò
+  const [chartModalOpen, setChartModalOpen] = useState<null | "prod" | "prog">(null);
+  const [tunnelRows, setTunnelRows] = useState<any[]>([]);
 
   useEffect(() => {
     let cancelled = false;
+    const key = `${year}-${viewMode}-${month}`;
+
+    // Module-level cache: nếu đã có + chưa bấm refresh → dùng lại, không fetch
+    if (mobileOverviewCache.has(key) && refreshTick === 0) {
+      const cached = mobileOverviewCache.get(key)!;
+      setMonthList(cached.monthList);
+      setMonthSummary(cached.monthSummary);
+      setDaySummary(cached.daySummary);
+      setKpi(cached.kpi);
+      setTunnelRows(cached.tunnelRows);
+      setLoading(false);
+      return;
+    }
+
     async function load() {
       setLoading(true);
       setErrorMsg("");
       try {
         // "Tháng" view luôn lấy full 12 tháng (thang=12); "Ngày" view lấy đúng tháng đang chọn
         const thangParam = viewMode === "month" ? 12 : month;
-        const [resOV, resAL] = await Promise.all([
+        const [resOV, resAL, resDL] = await Promise.all([
           fetch(`${N8N_OVERVIEW_URL}?thang=${thangParam}&nam=${year}`),
           fetch(`${N8N_CANH_BAO_LIST_URL}?limit=5`),
+          fetch(`${N8N_DUONG_LO_URL}?thang=${month}&nam=${year}`),
         ]);
         if (!resOV.ok) throw new Error("Lỗi tải tổng quan");
         const dataOV = await resOV.json();
         if (cancelled) return;
         const list: MonthSummary[] = Array.isArray(dataOV?.month) ? dataOV.month : dataOV?.month ? [dataOV.month] : [];
-        setMonthList(list);
-        // monthSummary (1 dòng) dùng cho KPI = tháng đang chọn, hoặc tháng cuối cùng nếu đang ở chế độ "Tháng"
         const focusMonth = viewMode === "month" ? Number(year === new Date().getFullYear() ? new Date().getMonth() + 1 : 12) : month;
-        setMonthSummary(list.find(m => Number(m.thang) === focusMonth) || list[list.length - 1] || null);
-        setDaySummary(Array.isArray(dataOV?.day) ? dataOV.day : []);
-        setKpi(dataOV?.kpi ?? null);
+        const monthSum = list.find(m => Number(m.thang) === focusMonth) || list[list.length - 1] || null;
+        const daySum = Array.isArray(dataOV?.day) ? dataOV.day : [];
+        const kpiVal = dataOV?.kpi ?? null;
+
+        // Tunnel data
+        const tunnelData = (resDL.ok ? ((await resDL.json())?.data || []) : []) as any[];
+
+        // Lưu vào cache
+        mobileOverviewCache.set(key, {
+          kpi: kpiVal,
+          monthSummary: monthSum,
+          daySummary: daySum,
+          monthList: list,
+          tunnelRows: tunnelData,
+        });
+
+        setMonthList(list);
+        setMonthSummary(monthSum);
+        setDaySummary(daySum);
+        setKpi(kpiVal);
+        setTunnelRows(tunnelData);
 
         if (resAL.ok) {
           const dataAL = await resAL.json();
@@ -597,11 +653,15 @@ function MobileOverview({
             </div>
           )}
 
-          {/* 2 KPI gradient cards */}
+          {/* 2 KPI gradient cards - click để xem biểu đồ */}
           <div className="flex flex-col gap-3 mb-4">
             <div
-              className="rounded-2xl p-4 shadow-lg"
+              onClick={() => setChartModalOpen("prod")}
+              className="rounded-2xl p-4 shadow-lg cursor-pointer active:opacity-90"
               style={{ background: "linear-gradient(135deg,#1E40AF,#2563EB)", boxShadow: "0 4px 20px rgba(37,99,235,0.3)" }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setChartModalOpen("prod"); }}
             >
               <div className="flex justify-between items-start mb-2 gap-2">
                 <div className="text-[15px] text-white font-semibold leading-tight">Sản lượng lũy kế</div>
@@ -642,8 +702,12 @@ function MobileOverview({
             </div>
 
             <div
-              className="rounded-2xl p-4 shadow-lg"
+              onClick={() => setChartModalOpen("prog")}
+              className="rounded-2xl p-4 shadow-lg cursor-pointer active:opacity-90"
               style={{ background: "linear-gradient(135deg,#92400E,#D97706)", boxShadow: "0 4px 20px rgba(217,119,6,0.3)" }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setChartModalOpen("prog"); }}
             >
               <div className="flex justify-between items-start mb-2 gap-2">
                 <div className="text-[15px] text-white font-semibold leading-tight">Tiến độ đào lò lũy kế</div>
@@ -684,71 +748,101 @@ function MobileOverview({
             </div>
           </div>
 
-          {/* Biểu đồ sản lượng */}
+          {/* Bảng chi tiết đường lò - thay thế 2 biểu đồ (click thẻ KPI để xem chart trong modal) */}
           <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm mb-3">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-3">
               <div>
-                <div className="font-bold text-slate-800 text-[14px]" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Sản lượng (lũy kế)</div>
-                <div className="text-[10px] text-slate-500">{viewMode === "month" ? "Theo tháng trong năm (tấn)" : "Theo ngày trong tháng (tấn)"}</div>
+                <div className="font-bold text-slate-800 text-[14px]" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Chi tiết theo từng đường lò</div>
+                <div className="text-[10px] text-slate-500">Lũy kế tháng {month}/{year} · Click thẻ KPI để xem biểu đồ</div>
               </div>
-              <span className="bg-blue-50 text-blue-700 text-[10px] font-bold rounded-md px-2 py-0.5">{chartBadge}</span>
+              <span className="bg-blue-50 text-blue-700 text-[10px] font-bold rounded-md px-2 py-0.5">T{month}</span>
             </div>
-            {chartProd.length === 0 ? (
-              <div className="text-center text-xs text-slate-400 py-6">
-                {loading ? "Đang tải…" : "Chưa có dữ liệu"}
-              </div>
-            ) : (
-              <div className="overflow-x-auto scrollbar-hide -mx-2">
-                <div style={{ minWidth: Math.max(320, chartProd.length * (viewMode === "month" ? 28 : 36)) }}>
-                  <ResponsiveContainer width="100%" height={140}>
-                    <BarChart data={chartProd} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                      <XAxis dataKey="day" tick={{ fontSize: 9, fill: C.muted }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 9, fill: C.muted }} axisLine={false} tickLine={false} />
-                      <Tooltip content={<ProductionTooltip />} cursor={{ fill: "rgba(37,99,235,0.04)" }} />
-                      <Bar dataKey="value" fill={C.primary} radius={[3, 3, 0, 0]} maxBarSize={viewMode === "month" ? 24 : 20} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Biểu đồ tiến độ */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm mb-3">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <div className="font-bold text-slate-800 text-[14px]" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Tiến độ đào lò (lũy kế)</div>
-                <div className="text-[10px] text-slate-500">{viewMode === "month" ? "Theo tháng trong năm (mét)" : "Theo ngày trong tháng (mét)"}</div>
-              </div>
-              <span className="bg-amber-50 text-amber-700 text-[10px] font-bold rounded-md px-2 py-0.5">{chartBadge}</span>
-            </div>
-            {chartProg.length === 0 ? (
-              <div className="text-center text-xs text-slate-400 py-6">
-                {loading ? "Đang tải…" : "Chưa có dữ liệu"}
-              </div>
-            ) : (
-              <div className="overflow-x-auto scrollbar-hide -mx-2">
-                <div style={{ minWidth: Math.max(320, chartProg.length * (viewMode === "month" ? 28 : 36)) }}>
-                  <ResponsiveContainer width="100%" height={120}>
-                    <AreaChart data={chartProg} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
-                      <defs>
-                        <linearGradient id="mobileOrangeGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={C.warning} stopOpacity={0.25} />
-                          <stop offset="95%" stopColor={C.warning} stopOpacity={0.01} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                      <XAxis dataKey="day" tick={{ fontSize: 9, fill: C.muted }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 9, fill: C.muted }} axisLine={false} tickLine={false} />
-                      <Tooltip content={<ProgressTooltip />} />
-                      <Area type="monotone" dataKey="value" stroke={C.warning} strokeWidth={2}
-                        fill="url(#mobileOrangeGrad)" dot={{ r: 2.5, fill: C.warning }} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            )}
+            {loading && tunnelRows.length === 0 ? (
+              <div className="text-center text-xs text-slate-400 py-6">Đang tải dữ liệu đường lò…</div>
+            ) : (() => {
+                // Tổng hợp lấy dòng cumulative cuối cùng của mỗi tunnel
+                const tunnelMap = new Map<string, any>();
+                for (const r of tunnelRows) {
+                  const existing = tunnelMap.get(r.duong_lo);
+                  if (!existing || (r.thoi_gian_bao_cao || "") > (existing.thoi_gian_bao_cao || "")) {
+                    tunnelMap.set(r.duong_lo, r);
+                  }
+                }
+                const tunnelList = Array.from(tunnelMap.values()).sort((a, b) =>
+                  String(a.duong_lo).localeCompare(String(b.duong_lo), "vi")
+                );
+                if (tunnelList.length === 0) {
+                  return <div className="text-center text-xs text-slate-400 py-6">Chưa có dữ liệu đường lò trong tháng này</div>;
+                }
+                // KH tháng = KH năm / 12
+                const keHoachThangSL = kpiSLKH / 12;
+                const keHoachThangTD = kpiTDKH / 12;
+                return (
+                  <div className="overflow-x-auto scrollbar-hide -mx-4">
+                    <table className="w-full text-[12px] text-left min-w-[420px]">
+                      <thead>
+                        <tr className="border-b border-slate-200">
+                          <th className="px-3 py-2 font-semibold text-slate-600 text-[10px] uppercase tracking-wide">Đường lò</th>
+                          <th className="px-2 py-2 font-semibold text-slate-600 text-[10px] uppercase tracking-wide text-right">SL (tấn)</th>
+                          <th className="px-2 py-2 font-semibold text-slate-600 text-[10px] uppercase tracking-wide text-right">Đào (m)</th>
+                          <th className="px-2 py-2 font-semibold text-slate-600 text-[10px] uppercase tracking-wide text-right">Thiếu SL</th>
+                          <th className="px-2 py-2 font-semibold text-slate-600 text-[10px] uppercase tracking-wide text-right">Thiếu Đào</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tunnelList.map(t => {
+                          const sl = Number(t.san_luong_luy_ke) || 0;
+                          const td = Number(t.tien_do_luy_ke) || 0;
+                          const thieuSL = Math.max(keHoachThangSL - sl, 0);
+                          const thieuTD = Math.max(keHoachThangTD - td, 0);
+                          const d = parseVNDate(t.thoi_gian_bao_cao);
+                          const updateStr = d
+                            ? `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+                            : "—";
+                          return (
+                            <tr key={t.duong_lo} className="border-b border-slate-100 last:border-0">
+                              <td className="px-3 py-2 font-semibold text-slate-900">Đường lò {t.duong_lo}</td>
+                              <td className="px-2 py-2 text-right font-bold text-blue-700">{Math.round(sl).toLocaleString("vi-VN")}</td>
+                              <td className="px-2 py-2 text-right font-bold text-orange-600">{Math.round(td).toLocaleString("vi-VN")}</td>
+                              <td className="px-2 py-2 text-right">
+                                {thieuSL > 0 ? (
+                                  <span className="font-semibold text-red-600">{Math.round(thieuSL).toLocaleString("vi-VN")}</span>
+                                ) : (
+                                  <span className="font-semibold text-green-600">Đạt</span>
+                                )}
+                              </td>
+                              <td className="px-2 py-2 text-right">
+                                {thieuTD > 0 ? (
+                                  <span className="font-semibold text-red-600">{Math.round(thieuTD).toLocaleString("vi-VN")}</span>
+                                ) : (
+                                  <span className="font-semibold text-green-600">Đạt</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-blue-200 bg-blue-50/60">
+                          <td className="px-3 py-2 font-bold text-slate-900">Tổng</td>
+                          <td className="px-2 py-2 text-right font-bold text-blue-700">
+                            {Math.round(tunnelList.reduce((s, t) => s + (Number(t.san_luong_luy_ke) || 0), 0)).toLocaleString("vi-VN")}
+                          </td>
+                          <td className="px-2 py-2 text-right font-bold text-orange-700">
+                            {Math.round(tunnelList.reduce((s, t) => s + (Number(t.tien_do_luy_ke) || 0), 0)).toLocaleString("vi-VN")}
+                          </td>
+                          <td className="px-2 py-2 text-right font-bold text-red-600">
+                            {Math.round(Math.max(keHoachThangSL * tunnelList.length - tunnelList.reduce((s, t) => s + (Number(t.san_luong_luy_ke) || 0), 0), 0)).toLocaleString("vi-VN")}
+                          </td>
+                          <td className="px-2 py-2 text-right font-bold text-red-600">
+                            {Math.round(Math.max(keHoachThangTD * tunnelList.length - tunnelList.reduce((s, t) => s + (Number(t.tien_do_luy_ke) || 0), 0), 0)).toLocaleString("vi-VN")}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                );
+              })()}
           </div>
 
           {/* Cảnh báo gần đây */}
@@ -795,6 +889,70 @@ function MobileOverview({
           </div>
         </div>
       </div>
+
+      {/* ─── Modal biểu đồ (khi click vào thẻ KPI) ──────────────────────────── */}
+      {chartModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end justify-center"
+          onClick={() => setChartModalOpen(null)}
+        >
+          <div
+            className="bg-white rounded-t-3xl w-full max-h-[85vh] overflow-auto"
+            onClick={e => e.stopPropagation()}
+            style={{ animation: "m-slideUp 0.32s cubic-bezier(0.32, 0.72, 0, 1)" }}
+          >
+            <div className="flex justify-center py-3">
+              <div style={{ width: 40, height: 4, borderRadius: 99, background: "#CBD5E1" }} />
+            </div>
+            <div className="flex items-center justify-between px-5 pb-3">
+              <div>
+                <h2 className="font-bold text-slate-900 text-base" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                  {chartModalOpen === "prod" ? "Biểu đồ sản lượng" : "Biểu đồ tiến độ đào lò"}
+                </h2>
+                <p className="text-[10px] text-slate-500">
+                  {viewMode === "month" ? "Theo tháng trong năm" : "Theo ngày trong tháng"} · {viewMode === "month" ? `Năm ${year}` : `Tháng ${month}/${year}`}
+                </p>
+              </div>
+              <button
+                onClick={() => setChartModalOpen(null)}
+                className="p-2 rounded-lg hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="px-3 pb-5">
+              {chartModalOpen === "prod" ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={chartProd} margin={{ top: 20, right: 8, bottom: 0, left: -8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: C.muted }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: C.muted }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<ProductionTooltip />} cursor={{ fill: "rgba(37,99,235,0.04)" }} />
+                    <Bar dataKey="value" fill={C.primary} radius={[3, 3, 0, 0]} maxBarSize={viewMode === "month" ? 24 : 20} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <AreaChart data={chartProg} margin={{ top: 20, right: 8, bottom: 0, left: -8 }}>
+                    <defs>
+                      <linearGradient id="mobileOrangeGradModal" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={C.warning} stopOpacity={0.25} />
+                        <stop offset="95%" stopColor={C.warning} stopOpacity={0.01} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: C.muted }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: C.muted }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<ProgressTooltip />} />
+                    <Area type="monotone" dataKey="value" stroke={C.warning} strokeWidth={2}
+                      fill="url(#mobileOrangeGradModal)" dot={{ r: 2.5, fill: C.warning }} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

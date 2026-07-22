@@ -1766,7 +1766,7 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
         </div>
       )}
 
-      {/* KPI cards + charts (ĐÃ TĂNG CHIỀU CAO LÊN ~4/3 LẦN) */}
+      {/* ─── Section 1: 2 KPI cards (chỉ detail, KHÔNG có chart) ────────────────── */}
       <div className="grid grid-cols-2 gap-6">
         {/* Card 1: Sản lượng lũy kế */}
         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm p-6 pb-4 flex flex-col justify-between">
@@ -1809,39 +1809,6 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
                 {tbSLNgay.toLocaleString("vi-VN", { maximumFractionDigits: 1 })} <span className="text-xs font-medium text-gray-500">tấn</span>
               </div>
             </div>
-          </div>
-          
-          <div className="flex items-center justify-between mt-4 mb-1">
-            <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Biểu đồ sản lượng</span>
-            {canScrollProd && (
-              <span className="text-[10px] text-gray-400">← kéo để xem thêm →</span>
-            )}
-          </div>
-          <div ref={prodBoxRef} className="w-full h-[270px] overflow-x-auto overflow-y-hidden pb-4">
-            <BarChart width={prodChartWidth} height={250} data={prodData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
-              <XAxis
-                dataKey="day"
-                tick={{ fontSize: 12, fill: "#94A3B8", fontWeight: 500 }}
-                axisLine={false}
-                tickLine={false}
-                dy={5}
-              />
-              <Tooltip cursor={{ fill: "rgba(37,99,235,0.04)" }} />
-              <Bar 
-                dataKey="value" 
-                fill="#2563EB" 
-                radius={[4, 4, 0, 0]} 
-                barSize={Math.min(48, prodItemWidth * 0.45)}
-                label={(props: any) => {
-                  const { x = 0, y = 0, width = 0, value = 0 } = props;
-                  return (
-                    <text x={Number(x) + Number(width) / 2} y={Number(y) - 10} fill="#2563EB" textAnchor="middle" fontSize={11} fontWeight="700">
-                      {Number(value).toLocaleString("vi-VN")} tấn
-                    </text>
-                  );
-                }}
-              />
-            </BarChart>
           </div>
         </div>
 
@@ -1887,55 +1854,113 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
               <div className="text-base font-bold text-orange-700">
                 {tbTDNgay.toLocaleString("vi-VN", { maximumFractionDigits: 1 })} <span className="text-xs font-medium text-gray-500">mét</span>
               </div>
-            </div>
-          </div>
-          
-          {/* Tăng chiều cao h-[180px] -> h-[250px] giúp biểu đồ vùng dốc lên nhìn trực quan hơn */}
-          <div className="flex items-center gap-1.5 mt-4 mb-1">
-            {canScrollProg && (
-              <span className="text-[10px] text-gray-400 ml-auto">← kéo để xem thêm →</span>
-            )}
-          </div>
-          <div ref={progBoxRef} className="w-full h-[270px] overflow-x-auto overflow-y-hidden pb-4">
-            <AreaChart width={progChartWidth} height={250} data={progData} margin={{ top: 25, right: 25, left: 25, bottom: 5 }}>
-              <defs>
-                <linearGradient id="colorProgress" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#F97316" stopOpacity={0.15}/>
-                  <stop offset="95%" stopColor="#FFF7ED" stopOpacity={0.01}/>
-                </linearGradient>
-              </defs>
-              <XAxis
-                dataKey="day"
-                tick={{ fontSize: 12, fill: "#94A3B8", fontWeight: 500 }}
-                axisLine={false}
-                tickLine={false}
-                dy={5}
-              />
-              <Tooltip />
-              <Area 
-                type="linear" 
-                dataKey="value" 
-                stroke="#EA580C" 
-                strokeWidth={2.5}
-                fillOpacity={1} 
-                fill="url(#colorProgress)"
-                dot={{ fill: "#EA580C", r: 4, strokeWidth: 2, stroke: "#fff" }}
-                activeDot={{ r: 5, fill: "#EA580C", strokeWidth: 0 }}
-                label={(props: any) => {
-                  const { x = 0, y = 0, value } = props;
-                  return (
-                    <text x={Number(x)} y={Number(y) - 10} fill="#EA580C" textAnchor="middle" fontSize={11} fontWeight="700">
-                      {value === 0 ? "0 mét" : `${value} mét`}
-                    </text>
-                  );
-                }}
-              />
-            </AreaChart>
-          </div>
-        </div>
-      </div>
+</div>
+           </div>
+         </div>
+       </div>
 
-      {/* COMPACT MAX: Thu hẹp triệt để phần bảng để nhường diện tích cho biểu đồ */}
+       {/* ─── Section 2: 2 Charts (full width, nhiều không gian hơn) ────────────────── */}
+       <div className="grid grid-cols-2 gap-6">
+         {/* Chart 1: Bar chart sản lượng */}
+         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm p-6 pb-4 flex flex-col">
+           <div className="flex items-center justify-between mb-3">
+             <div>
+               <p className="font-bold text-gray-900 text-base" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>Sản lượng (lũy kế)</p>
+               <p className="text-[11px] text-gray-500">{chartView === "month" ? "Theo tháng trong năm (tấn)" : "Theo ngày trong tháng (tấn)"}</p>
+             </div>
+             <div className="bg-blue-50 rounded-lg px-2 py-1 text-[11px] text-blue-700 font-semibold">
+               {chartView === "month" ? `Năm ${selectedYear}` : `Tháng ${selectedMonth}/${selectedYear}`}
+             </div>
+           </div>
+           <div ref={prodBoxRef} className="w-full h-[350px] overflow-x-auto overflow-y-hidden pb-4">
+             <BarChart width={prodChartWidth} height={330} data={prodData} margin={{ top: 30, right: 20, left: 20, bottom: 5 }}>
+               <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+               <XAxis
+                 dataKey="day"
+                 tick={{ fontSize: 13, fill: "#94A3B8", fontWeight: 500 }}
+                 axisLine={false}
+                 tickLine={false}
+                 dy={5}
+               />
+               <YAxis tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+               <Tooltip cursor={{ fill: "rgba(37,99,235,0.04)" }} />
+               <Bar
+                 dataKey="value"
+                 fill="#2563EB"
+                 radius={[4, 4, 0, 0]}
+                 barSize={Math.min(48, prodItemWidth * 0.45)}
+                 label={(props: any) => {
+                   const { x = 0, y = 0, width = 0, value = 0 } = props;
+                   return (
+                     <text x={Number(x) + Number(width) / 2} y={Number(y) - 10} fill="#2563EB" textAnchor="middle" fontSize={12} fontWeight="700">
+                       {Number(value).toLocaleString("vi-VN")}
+                     </text>
+                   );
+                 }}
+               />
+             </BarChart>
+           </div>
+           {canScrollProd && (
+             <div className="text-[10px] text-gray-400 text-center">← kéo để xem thêm →</div>
+           )}
+         </div>
+
+         {/* Chart 2: Area chart tiến độ */}
+         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm p-6 pb-4 flex flex-col">
+           <div className="flex items-center justify-between mb-3">
+             <div>
+               <p className="font-bold text-gray-900 text-base" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>Tiến độ đào lò (lũy kế)</p>
+               <p className="text-[11px] text-gray-500">{chartView === "month" ? "Theo tháng trong năm (mét)" : "Theo ngày trong tháng (mét)"}</p>
+             </div>
+             <div className="bg-orange-50 rounded-lg px-2 py-1 text-[11px] text-orange-700 font-semibold">
+               {chartView === "month" ? `Năm ${selectedYear}` : `Tháng ${selectedMonth}/${selectedYear}`}
+             </div>
+           </div>
+           <div ref={progBoxRef} className="w-full h-[350px] overflow-x-auto overflow-y-hidden pb-4">
+             <AreaChart width={progChartWidth} height={330} data={progData} margin={{ top: 30, right: 25, left: 25, bottom: 5 }}>
+               <defs>
+                 <linearGradient id="colorProgress" x1="0" y1="0" x2="0" y2="1">
+                   <stop offset="5%" stopColor="#F97316" stopOpacity={0.15}/>
+                   <stop offset="95%" stopColor="#FFF7ED" stopOpacity={0.01}/>
+                 </linearGradient>
+               </defs>
+               <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+               <XAxis
+                 dataKey="day"
+                 tick={{ fontSize: 13, fill: "#94A3B8", fontWeight: 500 }}
+                 axisLine={false}
+                 tickLine={false}
+                 dy={5}
+               />
+               <YAxis tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+               <Tooltip />
+               <Area
+                 type="linear"
+                 dataKey="value"
+                 stroke="#EA580C"
+                 strokeWidth={2.5}
+                 fillOpacity={1}
+                 fill="url(#colorProgress)"
+                 dot={{ fill: "#EA580C", r: 4, strokeWidth: 2, stroke: "#fff" }}
+                 activeDot={{ r: 5, fill: "#EA580C", strokeWidth: 0 }}
+                 label={(props: any) => {
+                   const { x = 0, y = 0, value } = props;
+                   return (
+                     <text x={Number(x)} y={Number(y) - 10} fill="#EA580C" textAnchor="middle" fontSize={12} fontWeight="700">
+                       {value}
+                     </text>
+                   );
+                 }}
+               />
+             </AreaChart>
+           </div>
+           {canScrollProg && (
+             <div className="text-[10px] text-gray-400 text-center">← kéo để xem thêm →</div>
+           )}
+         </div>
+       </div>
+
+       {/* COMPACT MAX: Thu hẹp triệt để phần bảng để nhường diện tích cho biểu đồ */}
       <div className="bg-white/80 rounded-xl border border-gray-100 overflow-hidden shadow-sm mt-1">
         <div className="flex items-center justify-between px-5 py-2 border-b border-gray-50 bg-gray-50/30">
           <div className="flex items-center gap-1.5">

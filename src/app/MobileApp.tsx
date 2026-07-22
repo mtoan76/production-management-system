@@ -523,65 +523,58 @@ function MobileOverview({
 
       <div className="flex-1 overflow-y-auto scrollbar-hide" style={{ background: C.bg }}>
         <div className="p-4">
-          {/* Toggle chế độ xem biểu đồ */}
-          <div className="bg-slate-100 rounded-xl p-1 flex gap-1 mb-3">
-            <button
-              onClick={() => setViewMode("day")}
-              className={`flex-1 py-2 text-[12px] font-bold rounded-lg transition-colors ${
-                viewMode === "day"
-                  ? "bg-white text-blue-700 shadow-sm"
-                  : "text-slate-500 active:text-slate-700"
-              }`}
-            >
-              Theo ngày
-              <span className="block text-[9px] font-medium opacity-70 mt-0.5">31 ngày trong tháng</span>
-            </button>
-            <button
-              onClick={() => setViewMode("month")}
-              className={`flex-1 py-2 text-[12px] font-bold rounded-lg transition-colors ${
-                viewMode === "month"
-                  ? "bg-white text-blue-700 shadow-sm"
-                  : "text-slate-500 active:text-slate-700"
-              }`}
-            >
-              Theo tháng
-              <span className="block text-[9px] font-medium opacity-70 mt-0.5">12 tháng trong năm</span>
-            </button>
-          </div>
+          {/* Filter row gọn: toggle + tháng + năm + refresh trên cùng 1 hàng */}
+          <div className="flex items-center gap-2 mb-3">
+            <div className="flex bg-slate-100 rounded-lg p-0.5 flex-shrink-0">
+              <button
+                onClick={() => setViewMode("day")}
+                className={`px-3 py-1.5 text-[12px] font-bold rounded-md transition-colors ${
+                  viewMode === "day" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 active:text-slate-700"
+                }`}
+              >
+                Ngày
+              </button>
+              <button
+                onClick={() => setViewMode("month")}
+                className={`px-3 py-1.5 text-[12px] font-bold rounded-md transition-colors ${
+                  viewMode === "month" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 active:text-slate-700"
+                }`}
+              >
+                Tháng
+              </button>
+            </div>
 
-          {/* Bộ lọc thời gian — tháng chỉ hiện khi xem theo ngày */}
-          <div className="flex items-center gap-2 mb-4">
             {viewMode === "day" && (
-              <div className="relative flex-1">
+              <div className="relative flex-1 min-w-0">
                 <select
                   value={month}
                   onChange={e => setMonth(Number(e.target.value))}
-                  className="w-full appearance-none bg-white border border-slate-200 rounded-lg pl-3 pr-8 py-2 text-[13px] font-semibold text-slate-700 shadow-sm"
+                  className="w-full appearance-none bg-white border border-slate-200 rounded-lg pl-3 pr-8 py-1.5 text-[13px] font-semibold text-slate-700 shadow-sm"
                 >
                   {months.map(m => (
                     <option key={m} value={m}>Tháng {m}</option>
                   ))}
                 </select>
-                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               </div>
             )}
-            <div className={`relative ${viewMode === "day" ? "" : "flex-1"}`}>
+            <div className="relative flex-1 min-w-0">
               <select
                 value={year}
                 onChange={e => setYear(Number(e.target.value))}
-                className="w-full appearance-none bg-white border border-slate-200 rounded-lg pl-3 pr-8 py-2 text-[13px] font-semibold text-slate-700 shadow-sm"
+                className="w-full appearance-none bg-white border border-slate-200 rounded-lg pl-3 pr-8 py-1.5 text-[13px] font-semibold text-slate-700 shadow-sm"
               >
                 {years.map(y => <option key={y} value={y}>Năm {y}</option>)}
               </select>
-              <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>
             <button
               onClick={() => setRefreshTick(t => t + 1)}
               disabled={loading}
-              className="p-2 rounded-lg bg-white border border-slate-200 text-blue-600 active:bg-slate-50 disabled:opacity-50"
+              className="p-1.5 rounded-lg bg-white border border-slate-200 text-blue-600 active:bg-slate-50 disabled:opacity-50 flex-shrink-0"
               aria-label="Làm mới"
             >
-              <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             </button>
           </div>
 

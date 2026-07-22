@@ -1641,10 +1641,56 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
   const kpiSanLuongTyLe = kpi?.san_luong_ty_le ?? 0;
   const kpiTienDoThucTe = kpi?.tien_do_thuc_te ?? 0;
   const kpiTienDoKeHoach = kpi?.tien_do_ke_hoach ?? 0;
-  const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
-  // Chỉ hiện đúng 7 cột/điểm trong khung nhìn, phần còn lại cuộn ngang để xem tiếp.
-  // Đo chiều rộng thật của từng khung để chia đều — không dùng số px cố định,
-  // vì khung có thể rộng/hẹp khác nhau tuỳ màn hình.
+const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
+
+  // ─── Tính "Còn lại" và "TB cần/ngày" theo chartView ─────────────────────────
+  // chartView = "month" → KPI hiển thị lũy kế NĂM → còn lại = kế hoạch năm - lũy kế năm
+  // chartView = "day"   → KPI hiển thị lũy kế THÁNG → còn lại = (kế hoạch tháng - lũy kế tháng)
+  const today = new Date();
+  const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+  const isLeapYear = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const totalDaysYear = isLeapYear(selectedYear) ? 366 : 365;
+
+  const isCurrentMonth = selectedYear === today.getFullYear() && selectedMonth === today.getMonth() + 1;
+  const isCurrentYear = selectedYear === today.getFullYear();
+  const remainingDaysMonth = isCurrentMonth
+    ? Math.max(daysInMonth - today.getDate(), 0)
+    : (selectedYear > today.getFullYear() || (selectedYear === today.getFullYear() && selectedMonth > today.getMonth() + 1))
+      ? daysInMonth
+      : 0;
+  const dayOfYearToday = Math.floor((today.getTime() - new Date(selectedYear, 0, 1).getTime()) / 86400000) + 1;
+  const remainingDaysYear = isCurrentYear
+    ? Math.max(totalDaysYear - dayOfYearToday, 0)
+    : selectedYear > today.getFullYear()
+      ? totalDaysYear
+      : 0;
+
+  // Lấy KPI tháng hiện tại từ monthSummary (lũy kế tháng)
+  const monthSL = monthSummary ? Number(monthSummary.san_luong_luy_ke) || 0 : 0;
+  const monthTD = monthSummary ? Number(monthSummary.tien_do_luy_ke) || 0 : 0;
+
+  // Kế hoạch tháng: hiện chưa có API riêng → dùng placeholder = tháng × (kế hoạch năm / 12)
+  // Sau này có thể thay bằng API /api/ke-hoach-thang khi backend có
+  const keHoachThangSL = kpiSanLuongKeHoach / 12;
+  const keHoachThangTD = kpiTienDoKeHoach / 12;
+
+  // Tính "Còn lại" theo chartView
+  // month view → còn lại = KH năm - lũy kế năm
+  // day view   → còn lại = KH tháng - lũy kế tháng
+  const conLaiSL = chartView === "month"
+    ? Math.max(kpiSanLuongKeHoach - kpiSanLuong, 0)
+    : Math.max(keHoachThangSL - monthSL, 0);
+  const conLaiTD = chartView === "month"
+    ? Math.max(kpiTienDoKeHoach - kpiTienDoThucTe, 0)
+    : Math.max(keHoachThangTD - monthTD, 0);
+  const remainingDays = chartView === "month" ? remainingDaysYear : remainingDaysMonth;
+  const tbSLNgay = remainingDays > 0 ? conLaiSL / remainingDays : 0;
+  const tbTDNgay = remainingDays > 0 ? conLaiTD / remainingDays : 0;
+  const periodLabel = chartView === "month" ? "năm" : "tháng";
+
+  // Chỉ hiển đúng 7 cột/điểm trong khung nhìn, phần còn lại cuộn ngang để xem tiếp.
+  // Đo chiều rộng thực tế của từng khung để chia đều cho đúng số cột/điểm muốn hiển thị,
+  // bất kể khung rộng/hẹp thế nào tuỳ theo layout thực tế trên máy người dùng.
   const VISIBLE_ITEMS = 7;
   const [prodBoxRef, prodBoxWidth] = useContainerWidth<HTMLDivElement>();
   const [progBoxRef, progBoxWidth] = useContainerWidth<HTMLDivElement>();
@@ -1672,8 +1718,8 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
               onChange={e => setChartView(e.target.value as "month" | "day")}
               className="appearance-none text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg pl-3 pr-7 py-1.5 cursor-pointer hover:bg-blue-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-200"
             >
-              <option value="month">Theo tháng (summary)</option>
-              <option value="day">Theo ngày (summary)</option>
+              <option value="month">Theo tháng </option>
+              <option value="day">Theo ngày </option>
             </select>
             <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
           </div>
@@ -1734,11 +1780,34 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
                   <span className="text-gray-400 text-xs font-semibold ml-1">/ {kpiSanLuongKeHoach.toLocaleString("vi-VN")} tấn</span>
                 )}
               </div>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Kế hoạch {chartView === "month" ? "năm" : "tháng"}: <strong className="text-gray-700">
+                  {chartView === "month"
+                    ? kpiSanLuongKeHoach.toLocaleString("vi-VN")
+                    : Math.round(keHoachThangSL).toLocaleString("vi-VN")}
+                </strong> tấn
+              </p>
             </div>
 
             <div className="bg-blue-50 border border-blue-200/70 rounded-2xl px-4 py-2.5 text-center min-w-[110px] shadow-sm">
               <span className="block text-3xl font-black text-[#2563EB] tracking-tight leading-none">{kpiSanLuongTyLe.toLocaleString("vi-VN")}%</span>
               <span className="block text-[10px] font-bold text-[#2563EB]/80 uppercase tracking-wider mt-1.5">Kế hoạch</span>
+            </div>
+          </div>
+
+          {/* Hàng Còn lại + TB cần/ngày */}
+          <div className="grid grid-cols-2 gap-3 mt-3 mb-2 p-3 rounded-xl bg-blue-50/60 border border-blue-100">
+            <div>
+              <div className="text-[11px] text-gray-500 font-medium mb-0.5">Còn lại ({periodLabel})</div>
+              <div className="text-base font-bold text-blue-700">
+                {conLaiSL.toLocaleString("vi-VN")} <span className="text-xs font-medium text-gray-500">tấn</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] text-gray-500 font-medium mb-0.5">TB cần/ngày ({remainingDays} ngày)</div>
+              <div className="text-base font-bold text-blue-700">
+                {tbSLNgay.toLocaleString("vi-VN", { maximumFractionDigits: 1 })} <span className="text-xs font-medium text-gray-500">tấn</span>
+              </div>
             </div>
           </div>
           
@@ -1790,11 +1859,34 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
                   <span className="text-gray-400 text-xs font-semibold ml-1">/ {kpiTienDoKeHoach.toLocaleString("vi-VN")} mét</span>
                 )}
               </div>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Kế hoạch {chartView === "month" ? "năm" : "tháng"}: <strong className="text-gray-700">
+                  {chartView === "month"
+                    ? kpiTienDoKeHoach.toLocaleString("vi-VN")
+                    : Math.round(keHoachThangTD).toLocaleString("vi-VN")}
+                </strong> mét
+              </p>
             </div>
 
             <div className="bg-orange-50 border border-orange-200/70 rounded-2xl px-4 py-2.5 text-center min-w-[110px] shadow-sm">
               <span className="block text-3xl font-black text-[#EA580C] tracking-tight leading-none">{kpiTienDoTyLe.toLocaleString("vi-VN")}%</span>
               <span className="block text-[10px] font-bold text-[#EA580C]/80 uppercase tracking-wider mt-1.5">Kế hoạch</span>
+            </div>
+          </div>
+
+          {/* Hàng Còn lại + TB cần/ngày */}
+          <div className="grid grid-cols-2 gap-3 mt-3 mb-2 p-3 rounded-xl bg-orange-50/60 border border-orange-100">
+            <div>
+              <div className="text-[11px] text-gray-500 font-medium mb-0.5">Còn lại ({periodLabel})</div>
+              <div className="text-base font-bold text-orange-700">
+                {conLaiTD.toLocaleString("vi-VN")} <span className="text-xs font-medium text-gray-500">mét</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] text-gray-500 font-medium mb-0.5">TB cần/ngày ({remainingDays} ngày)</div>
+              <div className="text-base font-bold text-orange-700">
+                {tbTDNgay.toLocaleString("vi-VN", { maximumFractionDigits: 1 })} <span className="text-xs font-medium text-gray-500">mét</span>
+              </div>
             </div>
           </div>
           

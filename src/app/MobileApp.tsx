@@ -477,6 +477,34 @@ function MobileOverview({
   const kpiTDKH = kpi?.tien_do_ke_hoach ?? 0;
   const kpiTDPct = kpi?.tien_do_ty_le ?? 0;
 
+  // ── Tính "còn lại" và "trung bình cần/ngày" để đạt kế hoạch (tháng hoặc năm tuỳ viewMode) ──
+  const today = new Date();
+  const daysInSelectedMonth = new Date(year, month, 0).getDate();
+  const isSelectedCurrentMonth = year === today.getFullYear() && month === today.getMonth() + 1;
+  const isSelectedFutureMonth = year > today.getFullYear() || (year === today.getFullYear() && month > today.getMonth() + 1);
+  const remainingDaysMonth = isSelectedCurrentMonth
+    ? Math.max(daysInSelectedMonth - today.getDate(), 0)
+    : isSelectedFutureMonth
+      ? daysInSelectedMonth
+      : 0;
+
+  const isLeapYear = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const totalDaysYear = isLeapYear(year) ? 366 : 365;
+  const isSelectedCurrentYear = year === today.getFullYear();
+  const isSelectedFutureYear = year > today.getFullYear();
+  const dayOfYearToday = Math.floor((today.getTime() - new Date(year, 0, 1).getTime()) / 86400000) + 1;
+  const remainingDaysYear = isSelectedCurrentYear
+    ? Math.max(totalDaysYear - dayOfYearToday, 0)
+    : isSelectedFutureYear
+      ? totalDaysYear
+      : 0;
+
+  const remainingDaysPeriod = viewMode === "month" ? remainingDaysYear : remainingDaysMonth;
+  const conLaiSanLuong = Math.max(kpiSLKH - kpiSanLuong, 0);
+  const conLaiTienDo = Math.max(kpiTDKH - kpiTienDo, 0);
+  const tbSanLuongNgay = remainingDaysPeriod > 0 ? conLaiSanLuong / remainingDaysPeriod : 0;
+  const tbTienDoNgay = remainingDaysPeriod > 0 ? conLaiTienDo / remainingDaysPeriod : 0;
+
   // Dữ liệu 2 biểu đồ: thay đổi nguồn theo viewMode
   const chartProd = viewMode === "month"
     ? monthList.map(m => ({ day: `T${m.thang}`, value: Number(m.san_luong_luy_ke) || 0 }))
@@ -569,22 +597,35 @@ function MobileOverview({
               className="rounded-2xl p-4 shadow-lg"
               style={{ background: "linear-gradient(135deg,#1E40AF,#2563EB)", boxShadow: "0 4px 20px rgba(37,99,235,0.3)" }}
             >
-              <div className="flex justify-between items-start mb-2">
-                <div className="text-[11px] text-white/75 font-medium">Sản lượng lũy kế</div>
-                <div className="bg-white/20 rounded-full px-2 py-0.5 text-[11px] font-bold text-white flex items-center gap-1">
-                  <ArrowUpRight size={11} />
+              <div className="flex justify-between items-start mb-2 gap-2">
+                <div className="text-[15px] text-white font-semibold leading-tight">Sản lượng lũy kế</div>
+                <div className="bg-white/20 rounded-full px-3 py-1.5 text-[20px] font-bold text-white flex items-center gap-1 flex-shrink-0 leading-none">
+                  <ArrowUpRight size={16} />
                   {kpiSLPct.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%
                 </div>
               </div>
-              <div className="font-extrabold text-white text-[28px] leading-none mb-1" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+              <div className="font-extrabold text-white text-[42px] leading-none mb-2" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
                 {kpiSanLuong.toLocaleString("vi-VN")}
-                <span className="text-sm font-medium ml-1 opacity-80">tấn</span>
+                <span className="text-xl font-medium ml-2 opacity-80">tấn</span>
               </div>
-              <div className="text-[11px] text-white/60 mb-2.5">
-                Kế hoạch: {kpiSLKH.toLocaleString("vi-VN")} tấn
+              <div className="text-[15px] text-white/85 mb-3 font-medium">
+                Kế hoạch: <strong className="text-white">{kpiSLKH.toLocaleString("vi-VN")}</strong> tấn
               </div>
-              <div className="h-1 bg-white/20 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-200 rounded-full" style={{ width: `${Math.min(100, kpiSLPct)}%` }} />
+              <div className="flex items-stretch gap-3 mb-2.5 bg-black/15 rounded-xl px-3.5 py-3">
+                <div className="flex-1 text-left">
+                  <div className="text-[15px] text-white/85 mb-1.5 font-medium">Còn lại {viewMode === "month" ? "(năm)" : "(tháng)"}</div>
+                  <div className="text-[24px] font-extrabold text-white leading-tight">{conLaiSanLuong.toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">tấn</span></div>
+                </div>
+                <div className="w-px bg-white/25 self-stretch" />
+                <div className="flex-1 text-left">
+                  <div className="text-[15px] text-white/85 mb-1.5 font-medium">TB cần/ngày ({remainingDaysPeriod} ngày)</div>
+                  <div className="text-[24px] font-extrabold text-white leading-tight">
+                    {tbSanLuongNgay.toLocaleString("vi-VN", { maximumFractionDigits: 1 })} <span className="text-sm font-medium opacity-80">tấn</span>
+                  </div>
+                </div>
+              </div>
+              <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-200 rounded-full transition-all" style={{ width: `${Math.min(100, kpiSLPct)}%` }} />
               </div>
             </div>
 
@@ -592,22 +633,35 @@ function MobileOverview({
               className="rounded-2xl p-4 shadow-lg"
               style={{ background: "linear-gradient(135deg,#92400E,#D97706)", boxShadow: "0 4px 20px rgba(217,119,6,0.3)" }}
             >
-              <div className="flex justify-between items-start mb-2">
-                <div className="text-[11px] text-white/75 font-medium">Tiến độ đào lò lũy kế</div>
-                <div className="bg-white/20 rounded-full px-2 py-0.5 text-[11px] font-bold text-white flex items-center gap-1">
-                  <ArrowUpRight size={11} />
+              <div className="flex justify-between items-start mb-2 gap-2">
+                <div className="text-[15px] text-white font-semibold leading-tight">Tiến độ đào lò lũy kế</div>
+                <div className="bg-white/20 rounded-full px-3 py-1.5 text-[20px] font-bold text-white flex items-center gap-1 flex-shrink-0 leading-none">
+                  <ArrowUpRight size={16} />
                   {kpiTDPct.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%
                 </div>
               </div>
-              <div className="font-extrabold text-white text-[28px] leading-none mb-1" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+              <div className="font-extrabold text-white text-[42px] leading-none mb-2" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
                 {kpiTienDo.toLocaleString("vi-VN")}
-                <span className="text-sm font-medium ml-1 opacity-80">mét</span>
+                <span className="text-xl font-medium ml-2 opacity-80">mét</span>
               </div>
-              <div className="text-[11px] text-white/60 mb-2.5">
-                Kế hoạch: {kpiTDKH.toLocaleString("vi-VN")} mét
+              <div className="text-[15px] text-white/85 mb-3 font-medium">
+                Kế hoạch: <strong className="text-white">{kpiTDKH.toLocaleString("vi-VN")}</strong> mét
               </div>
-              <div className="h-1 bg-white/20 rounded-full overflow-hidden">
-                <div className="h-full bg-amber-200 rounded-full" style={{ width: `${Math.min(100, kpiTDPct)}%` }} />
+              <div className="flex items-stretch gap-3 mb-2.5 bg-black/15 rounded-xl px-3.5 py-3">
+                <div className="flex-1 text-left">
+                  <div className="text-[15px] text-white/85 mb-1.5 font-medium">Còn lại {viewMode === "month" ? "(năm)" : "(tháng)"}</div>
+                  <div className="text-[24px] font-extrabold text-white leading-tight">{conLaiTienDo.toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">mét</span></div>
+                </div>
+                <div className="w-px bg-white/25 self-stretch" />
+                <div className="flex-1 text-left">
+                  <div className="text-[15px] text-white/85 mb-1.5 font-medium">TB cần/ngày ({remainingDaysPeriod} ngày)</div>
+                  <div className="text-[24px] font-extrabold text-white leading-tight">
+                    {tbTienDoNgay.toLocaleString("vi-VN", { maximumFractionDigits: 1 })} <span className="text-sm font-medium opacity-80">mét</span>
+                  </div>
+                </div>
+              </div>
+              <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
+                <div className="h-full bg-amber-200 rounded-full transition-all" style={{ width: `${Math.min(100, kpiTDPct)}%` }} />
               </div>
             </div>
           </div>

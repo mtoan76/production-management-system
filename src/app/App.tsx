@@ -8,7 +8,7 @@ import {
   Info, Search, X, Eye, Clock, MapPin, User, LogOut,
   AlertCircle, TrendingUp, ChevronRight, ChevronDown,
   Layers, XCircle,Loader2, Download, History,
-  FileText, Sparkles, Filter,
+  FileText, Sparkles, Filter, ArrowUpRight,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────
@@ -1375,7 +1375,7 @@ function HistoryDetailModal({ historyId, onClose }: { historyId: number | null; 
                           </div>
                           <div className="grid grid-cols-5 gap-1.5 text-center text-[11px]">
                             <div className="bg-white rounded px-1 py-1 border border-gray-100">
-                              <div className="font-bold text-blue-700 text-sm">{Number(r.san_luong_than || 0).toLocaleString("vi-VN")}</div>
+                               <div className="font-bold text-blue-700 text-sm">{Math.round(Number(r.san_luong_than || 0)).toLocaleString("vi-VN")}</div>
                               <div className="text-gray-400 text-[9px]">SL (tấn)</div>
                             </div>
                             <div className="bg-white rounded px-1 py-1 border border-gray-100">
@@ -1768,52 +1768,60 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
 
       {/* ─── Section 1: 2 KPI cards (chỉ detail, KHÔNG có chart) ────────────────── */}
       <div className="grid grid-cols-2 gap-6">
-        {/* Card 1: Sản lượng lũy kế */}
-        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm p-6 pb-4 flex flex-col justify-between">
+        {/* Card 1: Sản lượng lũy kế (gradient xanh) */}
+        <div
+          className="rounded-2xl overflow-hidden shadow-lg p-6 flex flex-col"
+          style={{ background: "linear-gradient(135deg,#1E40AF,#2563EB)", boxShadow: "0 4px 20px rgba(37,99,235,0.3)" }}
+        >
           <div className="flex justify-between items-start w-full mb-2">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-gray-400">SẢN LƯỢNG LŨY KẾ</p>
               <p className="text-[11px] text-gray-400 mt-1">{loadingOverview ? "Đang tải..." : `Tháng ${selectedMonth}/${selectedYear}`}</p>
               <div className="mt-3">
-                <span className="text-2xl font-black text-gray-900 tracking-tight">{kpiSanLuong.toLocaleString("vi-VN")}</span>
-                {kpiSanLuongKeHoach > 0 && (
-                  <span className="text-gray-400 text-xs font-semibold ml-1">/ {kpiSanLuongKeHoach.toLocaleString("vi-VN")} tấn</span>
-                )}
+                <span className="text-[36px] font-black text-white tracking-tight leading-none">
+                  {Math.round(kpiSanLuong).toLocaleString("vi-VN")}
+                </span>
+                <span className="text-white/85 text-sm font-medium ml-1">
+                  / {Math.round(chartView === "month" ? kpiSanLuongKeHoach : keHoachThangSL).toLocaleString("vi-VN")} tấn
+                </span>
               </div>
-              <p className="text-[11px] text-gray-400 mt-1">
-                Kế hoạch {chartView === "month" ? "năm" : "tháng"}: <strong className="text-gray-700">
+              <p className="text-[11px] text-white/85 mt-1.5">
+                Kế hoạch {chartView === "month" ? "năm" : "tháng"}: <strong className="text-white">
                   {chartView === "month"
-                    ? kpiSanLuongKeHoach.toLocaleString("vi-VN")
+                    ? Math.round(kpiSanLuongKeHoach).toLocaleString("vi-VN")
                     : Math.round(keHoachThangSL).toLocaleString("vi-VN")}
                 </strong> tấn
               </p>
             </div>
 
-            <div className="bg-blue-50 border border-blue-200/70 rounded-2xl px-4 py-2.5 text-center min-w-[110px] shadow-sm">
-              <span className="block text-3xl font-black text-[#2563EB] tracking-tight leading-none">{kpiSanLuongTyLe.toLocaleString("vi-VN")}%</span>
-              <span className="block text-[10px] font-bold text-[#2563EB]/80 uppercase tracking-wider mt-1.5">Kế hoạch</span>
+            <div className="bg-white/20 rounded-full px-3 py-1.5 text-[18px] font-bold text-white flex items-center gap-1 flex-shrink-0 leading-none">
+              <ArrowUpRight size={16} />
+              {Math.round(kpiSanLuongTyLe).toLocaleString("vi-VN")}%
             </div>
           </div>
 
           {/* Hàng Còn lại + TB cần/ngày */}
-          <div className="grid grid-cols-2 gap-3 mt-3 mb-2 p-3 rounded-xl bg-blue-50 border-2 border-blue-200">
-            <div>
-              <div className="text-[11px] text-gray-500 font-medium mb-0.5">Còn lại ({periodLabel})</div>
-              <div className="text-base font-bold text-blue-700">
-                {conLaiSL.toLocaleString("vi-VN")} <span className="text-xs font-medium text-gray-500">tấn</span>
+          <div className="grid grid-cols-2 gap-3 mt-3 p-3 rounded-xl bg-black/15">
+            <div className="text-left">
+              <div className="text-[13px] text-white/85 mb-1 font-medium">Còn lại ({periodLabel})</div>
+              <div className="text-[22px] font-extrabold text-white leading-tight">
+                {Math.round(conLaiSL).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">tấn</span>
               </div>
             </div>
-            <div>
-              <div className="text-[11px] text-gray-500 font-medium mb-0.5">TB cần/ngày ({remainingDays} ngày)</div>
-              <div className="text-base font-bold text-blue-700">
-                {tbSLNgay.toLocaleString("vi-VN", { maximumFractionDigits: 1 })} <span className="text-xs font-medium text-gray-500">tấn</span>
+            <div className="text-left">
+              <div className="text-[13px] text-white/85 mb-1 font-medium">TB cần/ngày ({remainingDays} ngày)</div>
+              <div className="text-[22px] font-extrabold text-white leading-tight">
+                {Math.round(tbSLNgay).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">tấn</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Card 2: Tiến độ đào lò lũy kế */}
-        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm p-6 pb-4 flex flex-col justify-between">
+        {/* Card 2: Tiến độ đào lò lũy kế (gradient cam) */}
+        <div
+          className="rounded-2xl overflow-hidden shadow-lg p-6 flex flex-col"
+          style={{ background: "linear-gradient(135deg,#92400E,#D97706)", boxShadow: "0 4px 20px rgba(217,119,6,0.3)" }}
+        >
           <div className="flex justify-between items-start w-full mb-2">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-gray-400">TIẾN ĐỘ ĐÀO LÒ LŨY KẾ</p>
@@ -1821,40 +1829,42 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
                 {loadingOverview ? "Đang tải..." : `Cập nhật: ${new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}, Hôm nay`}
               </p>
               <div className="mt-3">
-                <span className="text-2xl font-black text-gray-900 tracking-tight">{kpiTienDoThucTe.toLocaleString("vi-VN")}</span>
-                {kpiTienDoKeHoach > 0 && (
-                  <span className="text-gray-400 text-xs font-semibold ml-1">/ {kpiTienDoKeHoach.toLocaleString("vi-VN")} mét</span>
-                )}
+                <span className="text-[36px] font-black text-white tracking-tight leading-none">
+                  {Math.round(kpiTienDoThucTe).toLocaleString("vi-VN")}
+                </span>
+                <span className="text-white/85 text-sm font-medium ml-1">
+                  / {Math.round(chartView === "month" ? kpiTienDoKeHoach : keHoachThangTD).toLocaleString("vi-VN")} mét
+                </span>
               </div>
-              <p className="text-[11px] text-gray-400 mt-1">
-                Kế hoạch {chartView === "month" ? "năm" : "tháng"}: <strong className="text-gray-700">
+              <p className="text-[11px] text-white/85 mt-1.5">
+                Kế hoạch {chartView === "month" ? "năm" : "tháng"}: <strong className="text-white">
                   {chartView === "month"
-                    ? kpiTienDoKeHoach.toLocaleString("vi-VN")
+                    ? Math.round(kpiTienDoKeHoach).toLocaleString("vi-VN")
                     : Math.round(keHoachThangTD).toLocaleString("vi-VN")}
                 </strong> mét
               </p>
             </div>
 
-            <div className="bg-orange-50 border border-orange-200/70 rounded-2xl px-4 py-2.5 text-center min-w-[110px] shadow-sm">
-              <span className="block text-3xl font-black text-[#EA580C] tracking-tight leading-none">{kpiTienDoTyLe.toLocaleString("vi-VN")}%</span>
-              <span className="block text-[10px] font-bold text-[#EA580C]/80 uppercase tracking-wider mt-1.5">Kế hoạch</span>
+            <div className="bg-white/20 rounded-full px-3 py-1.5 text-[18px] font-bold text-white flex items-center gap-1 flex-shrink-0 leading-none">
+              <ArrowUpRight size={16} />
+              {Math.round(kpiTienDoTyLe).toLocaleString("vi-VN")}%
             </div>
           </div>
 
           {/* Hàng Còn lại + TB cần/ngày */}
-          <div className="grid grid-cols-2 gap-3 mt-3 mb-2 p-3 rounded-xl bg-orange-50 border-2 border-orange-200">
-            <div>
-              <div className="text-[11px] text-gray-500 font-medium mb-0.5">Còn lại ({periodLabel})</div>
-              <div className="text-base font-bold text-orange-700">
-                {conLaiTD.toLocaleString("vi-VN")} <span className="text-xs font-medium text-gray-500">mét</span>
+          <div className="grid grid-cols-2 gap-3 mt-3 p-3 rounded-xl bg-black/15">
+            <div className="text-left">
+              <div className="text-[13px] text-white/85 mb-1 font-medium">Còn lại ({periodLabel})</div>
+              <div className="text-[22px] font-extrabold text-white leading-tight">
+                {Math.round(conLaiTD).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">mét</span>
               </div>
             </div>
-            <div>
-              <div className="text-[11px] text-gray-500 font-medium mb-0.5">TB cần/ngày ({remainingDays} ngày)</div>
-              <div className="text-base font-bold text-orange-700">
-                {tbTDNgay.toLocaleString("vi-VN", { maximumFractionDigits: 1 })} <span className="text-xs font-medium text-gray-500">mét</span>
+            <div className="text-left">
+              <div className="text-[13px] text-white/85 mb-1 font-medium">TB cần/ngày ({remainingDays} ngày)</div>
+              <div className="text-[22px] font-extrabold text-white leading-tight">
+                {Math.round(tbTDNgay).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">mét</span>
               </div>
-</div>
+            </div>
            </div>
          </div>
        </div>
@@ -1893,7 +1903,7 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
                    const { x = 0, y = 0, width = 0, value = 0 } = props;
                    return (
                      <text x={Number(x) + Number(width) / 2} y={Number(y) - 10} fill="#2563EB" textAnchor="middle" fontSize={12} fontWeight="700">
-                       {Number(value).toLocaleString("vi-VN")}
+                        {Math.round(Number(value)).toLocaleString("vi-VN")}
                      </text>
                    );
                  }}

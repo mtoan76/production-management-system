@@ -499,9 +499,22 @@ function MobileOverview({
       ? totalDaysYear
       : 0;
 
+  // monthSL/TD = lũy kế tháng hiện tại (từ API monthSummary)
+  const monthSL = monthSummary ? Number(monthSummary.san_luong_luy_ke) || 0 : 0;
+  const monthTD = monthSummary ? Number(monthSummary.tien_do_luy_ke) || 0 : 0;
+  // Kế hoạch tháng = kế hoạch năm / 12
+  const keHoachThangSL = kpiSLKH / 12;
+  const keHoachThangTD = kpiTDKH / 12;
+
   const remainingDaysPeriod = viewMode === "month" ? remainingDaysYear : remainingDaysMonth;
-  const conLaiSanLuong = Math.max(kpiSLKH - kpiSanLuong, 0);
-  const conLaiTienDo = Math.max(kpiTDKH - kpiTienDo, 0);
+  // viewMode = "month" (năm): Còn lại = KH năm - lũy kế năm
+  // viewMode = "day" (tháng): Còn lại = KH tháng - lũy kế tháng
+  const conLaiSanLuong = viewMode === "month"
+    ? Math.max(kpiSLKH - kpiSanLuong, 0)
+    : Math.max(keHoachThangSL - monthSL, 0);
+  const conLaiTienDo = viewMode === "month"
+    ? Math.max(kpiTDKH - kpiTienDo, 0)
+    : Math.max(keHoachThangTD - monthTD, 0);
   const tbSanLuongNgay = remainingDaysPeriod > 0 ? conLaiSanLuong / remainingDaysPeriod : 0;
   const tbTienDoNgay = remainingDaysPeriod > 0 ? conLaiTienDo / remainingDaysPeriod : 0;
 
@@ -594,26 +607,32 @@ function MobileOverview({
                 <div className="text-[15px] text-white font-semibold leading-tight">Sản lượng lũy kế</div>
                 <div className="bg-white/20 rounded-full px-3 py-1.5 text-[20px] font-bold text-white flex items-center gap-1 flex-shrink-0 leading-none">
                   <ArrowUpRight size={16} />
-                  {kpiSLPct.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%
+                  {Math.round(kpiSLPct).toLocaleString("vi-VN")}%
                 </div>
               </div>
               <div className="font-extrabold text-white text-[42px] leading-none mb-2" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                {kpiSanLuong.toLocaleString("vi-VN")}
-                <span className="text-xl font-medium ml-2 opacity-80">tấn</span>
+                {Math.round(kpiSanLuong).toLocaleString("vi-VN")}
+                <span className="text-xl font-medium ml-2 opacity-80">
+                  / {Math.round(viewMode === "month" ? kpiSLKH : keHoachThangSL).toLocaleString("vi-VN")} tấn
+                </span>
               </div>
               <div className="text-[15px] text-white/85 mb-3 font-medium">
-                Kế hoạch: <strong className="text-white">{kpiSLKH.toLocaleString("vi-VN")}</strong> tấn
+                Kế hoạch {viewMode === "month" ? "năm" : "tháng"}: <strong className="text-white">
+                  {Math.round(viewMode === "month" ? kpiSLKH : keHoachThangSL).toLocaleString("vi-VN")}
+                </strong> tấn
               </div>
               <div className="flex items-stretch gap-3 mb-2.5 bg-black/15 rounded-xl px-3.5 py-3">
                 <div className="flex-1 text-left">
                   <div className="text-[15px] text-white/85 mb-1.5 font-medium">Còn lại {viewMode === "month" ? "(năm)" : "(tháng)"}</div>
-                  <div className="text-[24px] font-extrabold text-white leading-tight">{conLaiSanLuong.toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">tấn</span></div>
+                  <div className="text-[24px] font-extrabold text-white leading-tight">
+                    {Math.round(conLaiSanLuong).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">tấn</span>
+                  </div>
                 </div>
                 <div className="w-px bg-white/25 self-stretch" />
                 <div className="flex-1 text-left">
                   <div className="text-[15px] text-white/85 mb-1.5 font-medium">TB cần/ngày ({remainingDaysPeriod} ngày)</div>
                   <div className="text-[24px] font-extrabold text-white leading-tight">
-                    {tbSanLuongNgay.toLocaleString("vi-VN", { maximumFractionDigits: 1 })} <span className="text-sm font-medium opacity-80">tấn</span>
+                    {Math.round(tbSanLuongNgay).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">tấn</span>
                   </div>
                 </div>
               </div>
@@ -630,26 +649,32 @@ function MobileOverview({
                 <div className="text-[15px] text-white font-semibold leading-tight">Tiến độ đào lò lũy kế</div>
                 <div className="bg-white/20 rounded-full px-3 py-1.5 text-[20px] font-bold text-white flex items-center gap-1 flex-shrink-0 leading-none">
                   <ArrowUpRight size={16} />
-                  {kpiTDPct.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%
+                  {Math.round(kpiTDPct).toLocaleString("vi-VN")}%
                 </div>
               </div>
               <div className="font-extrabold text-white text-[42px] leading-none mb-2" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                {kpiTienDo.toLocaleString("vi-VN")}
-                <span className="text-xl font-medium ml-2 opacity-80">mét</span>
+                {Math.round(kpiTienDo).toLocaleString("vi-VN")}
+                <span className="text-xl font-medium ml-2 opacity-80">
+                  / {Math.round(viewMode === "month" ? kpiTDKH : keHoachThangTD).toLocaleString("vi-VN")} mét
+                </span>
               </div>
               <div className="text-[15px] text-white/85 mb-3 font-medium">
-                Kế hoạch: <strong className="text-white">{kpiTDKH.toLocaleString("vi-VN")}</strong> mét
+                Kế hoạch {viewMode === "month" ? "năm" : "tháng"}: <strong className="text-white">
+                  {Math.round(viewMode === "month" ? kpiTDKH : keHoachThangTD).toLocaleString("vi-VN")}
+                </strong> mét
               </div>
               <div className="flex items-stretch gap-3 mb-2.5 bg-black/15 rounded-xl px-3.5 py-3">
                 <div className="flex-1 text-left">
                   <div className="text-[15px] text-white/85 mb-1.5 font-medium">Còn lại {viewMode === "month" ? "(năm)" : "(tháng)"}</div>
-                  <div className="text-[24px] font-extrabold text-white leading-tight">{conLaiTienDo.toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">mét</span></div>
+                  <div className="text-[24px] font-extrabold text-white leading-tight">
+                    {Math.round(conLaiTienDo).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">mét</span>
+                  </div>
                 </div>
                 <div className="w-px bg-white/25 self-stretch" />
                 <div className="flex-1 text-left">
                   <div className="text-[15px] text-white/85 mb-1.5 font-medium">TB cần/ngày ({remainingDaysPeriod} ngày)</div>
                   <div className="text-[24px] font-extrabold text-white leading-tight">
-                    {tbTienDoNgay.toLocaleString("vi-VN", { maximumFractionDigits: 1 })} <span className="text-sm font-medium opacity-80">mét</span>
+                    {Math.round(tbTienDoNgay).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">mét</span>
                   </div>
                 </div>
               </div>

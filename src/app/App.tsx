@@ -1581,6 +1581,33 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
     alertPage * ALERTS_PER_PAGE
   );
 
+  // State cho chart modal (khi click vào số liệu chính)
+  const [chartModalOpen, setChartModalOpen] = useState<null | "prod" | "prog">(null);
+  // State cho bảng chi tiết đường lò
+  const [tunnelRows, setTunnelRows] = useState<DuongLoRow[]>([]);
+  const [tunnelLoading, setTunnelLoading] = useState(false);
+
+  // Fetch dữ liệu đường lò khi đổi tháng/năm
+  useEffect(() => {
+    let cancelled = false;
+    async function loadTunnels() {
+      setTunnelLoading(true);
+      try {
+        const res = await fetch(`${N8N_DUONG_LO_URL}?thang=${selectedMonth}&nam=${selectedYear}`);
+        if (!res.ok) throw new Error(`API ${res.status}`);
+        const data = await res.json();
+        if (cancelled) return;
+        setTunnelRows(data.data || []);
+      } catch (e) {
+        if (!cancelled) setTunnelRows([]);
+      } finally {
+        if (!cancelled) setTunnelLoading(false);
+      }
+    }
+    loadTunnels();
+    return () => { cancelled = true; };
+  }, [selectedMonth, selectedYear]);
+
   // ─── Dữ liệu tổng quan THẬT, lấy từ n8n (thay cho dữ liệu giả) ───
   const [monthSummary, setMonthSummary] = useState<MonthSummary | null>(null);
   const [daySummary, setDaySummary] = useState<DaySummary[]>([]);
@@ -1701,6 +1728,25 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
   const canScrollProd = prodData.length > VISIBLE_ITEMS;
   const canScrollProg = progData.length > VISIBLE_ITEMS;
 
+  // Tổng hợp dữ liệu đường lò: lấy dòng cumulative cuối cùng của mỗi tunnel
+  type TunnelAgg = { id: string; name: string; san_luong: number; tien_do: number; lastReport: string };
+  const tunnelAggregated: TunnelAgg[] = useMemo(() => {
+    const map = new Map<string, TunnelAgg>();
+    for (const row of tunnelRows) {
+      const existing = map.get(row.duong_lo);
+      if (!existing || (row.thoi_gian_bao_cao || "") > existing.lastReport) {
+        map.set(row.duong_lo, {
+          id: row.duong_lo,
+          name: `Đường lò ${row.duong_lo}`,
+          san_luong: Number(row.san_luong_luy_ke) || 0,
+          tien_do: Number(row.tien_do_luy_ke) || 0,
+          lastReport: row.thoi_gian_bao_cao || "",
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "vi"));
+  }, [tunnelRows]);
+
   return (
     <div className="p-8 flex flex-col gap-6 min-h-screen overflow-y-auto bg-[#F8FAFC]">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -1778,7 +1824,11 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
               <p className="text-xs font-bold uppercase tracking-wider text-gray-400">SẢN LƯỢNG LŨY KẾ</p>
               <p className="text-[11px] text-gray-400 mt-1">{loadingOverview ? "Đang tải..." : `Tháng ${selectedMonth}/${selectedYear}`}</p>
               <div className="mt-3">
-                <span className="text-[36px] font-black text-white tracking-tight leading-none">
+                <span
+                  onClick={() => setChartModalOpen("prod")}
+                  className="text-[36px] font-black text-white tracking-tight leading-none cursor-pointer hover:underline decoration-white/50 underline-offset-4 transition-all"
+                  title="Click để xem biểu đồ sản lượng"
+                >
                   {Math.round(kpiSanLuong).toLocaleString("vi-VN")}
                 </span>
                 <span className="text-white/85 text-sm font-medium ml-1">
@@ -1829,7 +1879,11 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
                 {loadingOverview ? "Đang tải..." : `Cập nhật: ${new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}, Hôm nay`}
               </p>
               <div className="mt-3">
-                <span className="text-[36px] font-black text-white tracking-tight leading-none">
+                <span
+                  onClick={() => setChartModalOpen("prog")}
+                  className="text-[36px] font-black text-white tracking-tight leading-none cursor-pointer hover:underline decoration-white/50 underline-offset-4 transition-all"
+                  title="Click để xem biểu đồ tiến độ"
+                >
                   {Math.round(kpiTienDoThucTe).toLocaleString("vi-VN")}
                 </span>
                 <span className="text-white/85 text-sm font-medium ml-1">
@@ -1869,106 +1923,85 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
          </div>
        </div>
 
-       {/* ─── Section 2: 2 Charts (full width, nhiều không gian hơn) ────────────────── */}
-       <div className="grid grid-cols-2 gap-6">
-         {/* Chart 1: Bar chart sản lượng */}
-         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm p-6 pb-4 flex flex-col">
-           <div className="flex items-center justify-between mb-3">
-             <div>
-               <p className="font-bold text-gray-900 text-base" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>Sản lượng (lũy kế)</p>
-               <p className="text-[11px] text-gray-500">{chartView === "month" ? "Theo tháng trong năm (tấn)" : "Theo ngày trong tháng (tấn)"}</p>
-             </div>
-             <div className="bg-blue-50 rounded-lg px-2 py-1 text-[11px] text-blue-700 font-semibold">
-               {chartView === "month" ? `Năm ${selectedYear}` : `Tháng ${selectedMonth}/${selectedYear}`}
-             </div>
-           </div>
-           <div ref={prodBoxRef} className="w-full h-[350px] overflow-x-auto overflow-y-hidden pb-4">
-             <BarChart width={prodChartWidth} height={330} data={prodData} margin={{ top: 30, right: 20, left: 20, bottom: 5 }}>
-               <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-               <XAxis
-                 dataKey="day"
-                 tick={{ fontSize: 13, fill: "#94A3B8", fontWeight: 500 }}
-                 axisLine={false}
-                 tickLine={false}
-                 dy={5}
-               />
-               <YAxis tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-               <Tooltip cursor={{ fill: "rgba(37,99,235,0.04)" }} />
-               <Bar
-                 dataKey="value"
-                 fill="#2563EB"
-                 radius={[4, 4, 0, 0]}
-                 barSize={Math.min(48, prodItemWidth * 0.45)}
-                 label={(props: any) => {
-                   const { x = 0, y = 0, width = 0, value = 0 } = props;
-                   return (
-                     <text x={Number(x) + Number(width) / 2} y={Number(y) - 10} fill="#2563EB" textAnchor="middle" fontSize={12} fontWeight="700">
-                        {Math.round(Number(value)).toLocaleString("vi-VN")}
-                     </text>
-                   );
-                 }}
-               />
-             </BarChart>
-           </div>
-           {canScrollProd && (
-             <div className="text-[10px] text-gray-400 text-center">← kéo để xem thêm →</div>
-           )}
-         </div>
+        {/* ─── Section 2: Bảng chi tiết đường lò (theo tháng) ─────────────────────────── */}
+        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm p-6 pb-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="font-bold text-gray-900 text-base" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>Chi tiết theo từng đường lò</p>
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                Lũy kế tháng {selectedMonth}/{selectedYear} · Click vào số liệu ở thẻ trên để xem biểu đồ chi tiết
+              </p>
+            </div>
+            <div className="bg-blue-50 rounded-lg px-2 py-1 text-[11px] text-blue-700 font-semibold">
+              Tháng {selectedMonth}/{selectedYear}
+            </div>
+          </div>
 
-         {/* Chart 2: Area chart tiến độ */}
-         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm p-6 pb-4 flex flex-col">
-           <div className="flex items-center justify-between mb-3">
-             <div>
-               <p className="font-bold text-gray-900 text-base" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>Tiến độ đào lò (lũy kế)</p>
-               <p className="text-[11px] text-gray-500">{chartView === "month" ? "Theo tháng trong năm (mét)" : "Theo ngày trong tháng (mét)"}</p>
-             </div>
-             <div className="bg-orange-50 rounded-lg px-2 py-1 text-[11px] text-orange-700 font-semibold">
-               {chartView === "month" ? `Năm ${selectedYear}` : `Tháng ${selectedMonth}/${selectedYear}`}
-             </div>
-           </div>
-           <div ref={progBoxRef} className="w-full h-[350px] overflow-x-auto overflow-y-hidden pb-4">
-             <AreaChart width={progChartWidth} height={330} data={progData} margin={{ top: 30, right: 25, left: 25, bottom: 5 }}>
-               <defs>
-                 <linearGradient id="colorProgress" x1="0" y1="0" x2="0" y2="1">
-                   <stop offset="5%" stopColor="#F97316" stopOpacity={0.15}/>
-                   <stop offset="95%" stopColor="#FFF7ED" stopOpacity={0.01}/>
-                 </linearGradient>
-               </defs>
-               <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-               <XAxis
-                 dataKey="day"
-                 tick={{ fontSize: 13, fill: "#94A3B8", fontWeight: 500 }}
-                 axisLine={false}
-                 tickLine={false}
-                 dy={5}
-               />
-               <YAxis tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-               <Tooltip />
-               <Area
-                 type="linear"
-                 dataKey="value"
-                 stroke="#EA580C"
-                 strokeWidth={2.5}
-                 fillOpacity={1}
-                 fill="url(#colorProgress)"
-                 dot={{ fill: "#EA580C", r: 4, strokeWidth: 2, stroke: "#fff" }}
-                 activeDot={{ r: 5, fill: "#EA580C", strokeWidth: 0 }}
-                 label={(props: any) => {
-                   const { x = 0, y = 0, value } = props;
-                   return (
-                     <text x={Number(x)} y={Number(y) - 10} fill="#EA580C" textAnchor="middle" fontSize={12} fontWeight="700">
-                       {value}
-                     </text>
-                   );
-                 }}
-               />
-             </AreaChart>
-           </div>
-           {canScrollProg && (
-             <div className="text-[10px] text-gray-400 text-center">← kéo để xem thêm →</div>
-           )}
-         </div>
-       </div>
+          {tunnelLoading ? (
+            <div className="text-center py-8 text-sm text-gray-500">Đang tải dữ liệu đường lò...</div>
+          ) : tunnelAggregated.length === 0 ? (
+            <div className="text-center py-8 text-sm text-gray-500">Chưa có dữ liệu đường lò trong tháng này</div>
+          ) : (
+            <div className="w-full overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="px-4 py-3 font-semibold text-gray-600 text-[12px] uppercase tracking-wider">Đường lò</th>
+                    <th className="px-4 py-3 font-semibold text-gray-600 text-[12px] uppercase tracking-wider text-right">SL lũy kế (tấn)</th>
+                    <th className="px-4 py-3 font-semibold text-gray-600 text-[12px] uppercase tracking-wider text-right">Tiến độ lũy kế (mét)</th>
+                    <th className="px-4 py-3 font-semibold text-gray-600 text-[12px] uppercase tracking-wider text-right">Còn thiếu SL tháng (tấn)</th>
+                    <th className="px-4 py-3 font-semibold text-gray-600 text-[12px] uppercase tracking-wider text-right">Còn thiếu đào lò tháng (mét)</th>
+                    <th className="px-4 py-3 font-semibold text-gray-600 text-[12px] uppercase tracking-wider">Cập nhật</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tunnelAggregated.map(t => {
+                    const thieuSL = Math.max(keHoachThangSL - t.san_luong, 0);
+                    const thieuTD = Math.max(keHoachThangTD - t.tien_do, 0);
+                    return (
+                      <tr key={t.id} className="border-b last:border-0 border-gray-100 hover:bg-gray-50/50 transition-colors">
+                        <td className="px-4 py-3 font-semibold text-gray-900">{t.name}</td>
+                        <td className="px-4 py-3 text-right font-bold text-blue-700">{Math.round(t.san_luong).toLocaleString("vi-VN")}</td>
+                        <td className="px-4 py-3 text-right font-bold text-orange-600">{Math.round(t.tien_do).toLocaleString("vi-VN")}</td>
+                        <td className="px-4 py-3 text-right">
+                          {thieuSL > 0 ? (
+                            <span className="font-semibold text-red-600">{Math.round(thieuSL).toLocaleString("vi-VN")}</span>
+                          ) : (
+                            <span className="font-semibold text-green-600">Đạt</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {thieuTD > 0 ? (
+                            <span className="font-semibold text-red-600">{Math.round(thieuTD).toLocaleString("vi-VN")}</span>
+                          ) : (
+                            <span className="font-semibold text-green-600">Đạt</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-[11px] text-gray-500 whitespace-nowrap">
+                          {t.lastReport ? new Date(t.lastReport).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-blue-50/60 border-t-2 border-blue-200">
+                    <td className="px-4 py-3 font-bold text-gray-900">Tổng</td>
+                    <td className="px-4 py-3 text-right font-bold text-blue-700">{Math.round(tunnelAggregated.reduce((s, t) => s + t.san_luong, 0)).toLocaleString("vi-VN")}</td>
+                    <td className="px-4 py-3 text-right font-bold text-orange-700">{Math.round(tunnelAggregated.reduce((s, t) => s + t.tien_do, 0)).toLocaleString("vi-VN")}</td>
+                    <td className="px-4 py-3 text-right font-bold text-red-600">
+                      {Math.round(Math.max(keHoachThangSL * tunnelAggregated.length - tunnelAggregated.reduce((s, t) => s + t.san_luong, 0), 0)).toLocaleString("vi-VN")}
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-red-600">
+                      {Math.round(Math.max(keHoachThangTD * tunnelAggregated.length - tunnelAggregated.reduce((s, t) => s + t.tien_do, 0), 0)).toLocaleString("vi-VN")}
+                    </td>
+                    <td className="px-4 py-3"></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
 
        {/* COMPACT MAX: Thu hẹp triệt để phần bảng để nhường diện tích cho biểu đồ */}
       <div className="bg-white/80 rounded-xl border border-gray-100 overflow-hidden shadow-sm mt-1">
@@ -2061,6 +2094,87 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
           </div>
         )}
       </div>
+
+      {/* ─── Modal biểu đồ (khi click vào số liệu chính ở 2 thẻ KPI) ────── */}
+      {chartModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setChartModalOpen(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b border-gray-200">
+              <div>
+                <h2 className="font-bold text-gray-900 text-lg" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                  {chartModalOpen === "prod" ? "Biểu đồ sản lượng (lũy kế)" : "Biểu đồ tiến độ đào lò (lũy kế)"}
+                </h2>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  {chartView === "month" ? "Theo tháng trong năm" : "Theo ngày trong tháng"} · {chartView === "month" ? `Năm ${selectedYear}` : `Tháng ${selectedMonth}/${selectedYear}`}
+                </p>
+              </div>
+              <button
+                onClick={() => setChartModalOpen(null)}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                title="Đóng"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body - Chart */}
+            <div className="p-5">
+              {chartModalOpen === "prod" ? (
+                <BarChart width={prodChartWidth} height={380} data={prodData} margin={{ top: 30, right: 20, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                  <XAxis dataKey="day" tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} dy={5} />
+                  <YAxis tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                  <Tooltip cursor={{ fill: "rgba(37,99,235,0.04)" }} />
+                  <Bar
+                    dataKey="value"
+                    fill="#2563EB"
+                    radius={[4, 4, 0, 0]}
+                    barSize={Math.min(48, prodItemWidth * 0.45)}
+                    label={(props: any) => {
+                      const { x = 0, y = 0, width = 0, value = 0 } = props;
+                      return (
+                        <text x={Number(x) + Number(width) / 2} y={Number(y) - 10} fill="#2563EB" textAnchor="middle" fontSize={12} fontWeight="700">
+                          {Math.round(Number(value)).toLocaleString("vi-VN")}
+                        </text>
+                      );
+                    }}
+                  />
+                </BarChart>
+              ) : (
+                <AreaChart width={progChartWidth} height={380} data={progData} margin={{ top: 30, right: 25, left: 25, bottom: 5 }}>
+                  <defs>
+                    <linearGradient id="colorProgressModal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#F97316" stopOpacity={0.15} />
+                      <stop offset="95%" stopColor="#FFF7ED" stopOpacity={0.01} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                  <XAxis dataKey="day" tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} dy={5} />
+                  <YAxis tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                  <Tooltip />
+                  <Area
+                    type="linear"
+                    dataKey="value"
+                    stroke="#EA580C"
+                    strokeWidth={2.5}
+                    fillOpacity={1}
+                    fill="url(#colorProgressModal)"
+                    dot={{ fill: "#EA580C", r: 4, strokeWidth: 2, stroke: "#fff" }}
+                    activeDot={{ r: 5, fill: "#EA580C", strokeWidth: 0 }}
+                  />
+                </AreaChart>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

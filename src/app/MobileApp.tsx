@@ -1369,10 +1369,10 @@ function MobileSubmit({ onNav }: { onNav: (t: TabId) => void }) {
         </button>
         <button
           onClick={handleSubmit}
-          disabled={status === "processing" || (!file && !text.trim())}
+          disabled={status === "processing" || !file}
           className="flex-[2] py-3 rounded-xl text-white font-bold text-[13px] flex items-center justify-center gap-2 disabled:cursor-not-allowed active:opacity-80"
           style={{
-            background: (!file && !text.trim())
+            background: !file
               ? "#CBD5E1"
               : "linear-gradient(135deg,#2563EB,#1D4ED8)",
           }}

@@ -9,6 +9,7 @@ import {
   AlertCircle, TrendingUp, ChevronRight, ChevronDown,
   Layers, XCircle,Loader2, Download, History,
   FileText, Sparkles, Filter, ArrowUpRight,
+  FileSpreadsheet, FileImage, CheckCircle2,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────
@@ -769,13 +770,100 @@ function SubmitOverlay({
 }
 
 // ─── Screen 1: Input ──────────────────────────────────────
+type TemplateType = "daolo" | "khai_thac";
+type FileValidation = {
+  valid: boolean;
+  type?: TemplateType;
+  error?: string;
+};
+const TEMPLATE_FILES: Record<TemplateType, { url: string; name: string; label: string }> = {
+  daolo: {
+    url: "/templates/baocaocongtruong_daolo.xlsx",
+    name: "baocaocongtruong_daolo.xlsx",
+    label: "Báo cáo Đào lò",
+  },
+  khai_thac: {
+    url: "/templates/baocaocongtruong_Khai thac.xlsx",
+    name: "baocaocongtruong_Khai thac.xlsx",
+    label: "Báo cáo Khai thác",
+  },
+};
+
+// Validate file Excel: check Row 2 headers to determine template type
+async function validateExcelFile(file: File): Promise<FileValidation> {
+  const imageMatch = file.name.match(/\.(jpg|jpeg|png)$/i);
+  if (imageMatch) {
+    // Ảnh chụp: chấp nhận (sẽ parse bằng OCR ở n8n)
+    return { valid: true, type: undefined };
+  }
+  const excelMatch = file.name.match(/\.(xlsx|csv)$/i);
+  if (!excelMatch) {
+    return { valid: false, error: "File phải là Excel (.xlsx, .csv) hoặc ảnh (.jpg, .png)" };
+  }
+  try {
+    const buffer = await file.arrayBuffer();
+    // Dynamic import xlsx (đã được cài đặt)
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(buffer);
+    const sheetName = wb.SheetNames[0];
+    if (!sheetName) return { valid: false, error: "File Excel rỗng" };
+    const sheet = wb.Sheets[sheetName];
+    const ref = sheet["!ref"];
+    if (!ref) return { valid: false, error: "Không đọc được header file" };
+    const range = XLSX.utils.decode_range(ref);
+    // Đọc Row index 2 (hàng thứ 3) - chứa header chính
+    const headers: string[] = [];
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const addr = XLSX.utils.encode_cell({ r: 2, c });
+      const cell = sheet[addr];
+      headers.push(cell?.v?.toString().trim() || "");
+    }
+    // Marker phân biệt:
+    // Đào lò: col index 5 = "Đường lò đào" (không chứa "tấn than")
+    // Khai thác: col index 5 = "Lò chợ ... (tấn than)"
+    const col5 = (headers[5] || "").toLowerCase();
+    const hasTanThan = col5.includes("tấn than") || col5.includes("lò chợ");
+    const hasDuongLoDao = col5.includes("đường lò đào");
+    if (hasTanThan) return { valid: true, type: "khai_thac" };
+    if (hasDuongLoDao) return { valid: true, type: "daolo" };
+    return {
+      valid: false,
+      error: "File không đúng cấu trúc template. Vui lòng tải template mẫu (Đào lò hoặc Khai thác) và điền theo đúng định dạng.",
+    };
+  } catch (e: any) {
+    return { valid: false, error: "Không thể đọc file Excel: " + (e?.message || "lỗi không xác định") };
+  }
+}
+
 function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
   const [dragging, setDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [validation, setValidation] = useState<FileValidation | null>(null);
+  const [validating, setValidating] = useState(false);
   const [status, setStatus] = useState<SubmitStatus>("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [reportItems, setReportItems] = useState<ReportItem[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const validateAndSetFile = async (f: File | null) => {
+    setFile(f);
+    setValidation(null);
+    if (!f) return;
+    setValidating(true);
+    const result = await validateExcelFile(f);
+    setValidation(result);
+    setValidating(false);
+  };
+
+  const handleDownloadTemplate = (type: TemplateType) => {
+    const tpl = TEMPLATE_FILES[type];
+    const link = document.createElement("a");
+    link.href = tpl.url;
+    link.download = tpl.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const handleSubmitReport = async () => {
     // Guard chống double-click: state chưa kịp update thì request thứ 2 đã bắn đi
@@ -784,6 +872,11 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
     // Kiểm tra nếu người dùng chưa nhập gì cả thì cảnh báo
     if (!file) {
       alert("Vui lòng tải lên tệp báo cáo!");
+      return;
+    }
+    // Kiểm tra validation (chỉ áp dụng cho file Excel)
+    if (validation && !validation.valid) {
+      alert(validation.error || "File không hợp lệ. Vui lòng kiểm tra lại.");
       return;
     }
 
@@ -862,16 +955,6 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
     setReportItems([]);
   };
 
-  // Tải về file Excel mẫu gốc (đặt sẵn trong thư mục public/templates của project)
-  const handleDownloadTemplate = () => {
-    const link = document.createElement("a");
-    link.href = "/templates/Report_Template.xlsx";
-    link.download = "Report_Template.xlsx";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   return (
     <div className="p-8 h-full flex flex-col relative">
       <SubmitOverlay status={status} errorMessage={errorMessage} reportItems={reportItems} onClose={closeOverlay} onNavigate={onNavigate} />
@@ -880,53 +963,143 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
         Nhập báo cáo mới
       </h1>
 
-      <div className="flex-1 min-h-0">
-        {/* Upload - chỉ giữ phần tải file */}
-        <div className="bg-white rounded-xl border border-gray-200 flex flex-col overflow-hidden">
-          <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
-            <Upload size={15} color="#2563EB" />
-            <span className="text-sm font-semibold text-gray-700">Tải lên tệp</span>
-            <span className="text-xs text-gray-400 ml-1">Excel, ảnh chụp</span>
+      <div className="flex-1 min-h-0 flex flex-col gap-5">
+        {/* ─── Bước 1: Tải template mẫu (2 lựa chọn) ───────────────────────── */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-xs font-bold">1</div>
+            <span className="text-sm font-semibold text-gray-800">Tải template mẫu</span>
+            <span className="text-xs text-gray-500 ml-1">— chọn đúng loại công trường bạn muốn nộp báo cáo</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={handleDownloadTemplate}
-              className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-600 hover:bg-blue-50 transition-colors"
+              onClick={() => handleDownloadTemplate("daolo")}
+              className="flex items-center gap-3 px-4 py-3 rounded-lg border-2 border-blue-200 bg-blue-50/40 hover:bg-blue-50 hover:border-blue-400 transition-colors text-left"
             >
-              <Download size={13} />
-              Tải template mẫu
+              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <FileSpreadsheet size={20} className="text-blue-700" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-gray-800 text-sm truncate">Template Đào lò</div>
+                <div className="text-[11px] text-gray-500 truncate">Báo cáo công trường đào lò (m, m², vì)</div>
+              </div>
+              <Download size={16} className="text-blue-600 flex-shrink-0" />
             </button>
+            <button
+              onClick={() => handleDownloadTemplate("khai_thac")}
+              className="flex items-center gap-3 px-4 py-3 rounded-lg border-2 border-orange-200 bg-orange-50/40 hover:bg-orange-50 hover:border-orange-400 transition-colors text-left"
+            >
+              <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
+                <FileSpreadsheet size={20} className="text-orange-700" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-gray-800 text-sm truncate">Template Khai thác</div>
+                <div className="text-[11px] text-gray-500 truncate">Báo cáo sản lượng than (tấn)</div>
+              </div>
+              <Download size={16} className="text-orange-600 flex-shrink-0" />
+            </button>
+          </div>
+        </div>
+
+        {/* ─── Bước 2 + 3: Điền dữ liệu + Upload file ───────────────────────────── */}
+        <div className="bg-white rounded-xl border border-gray-200 flex flex-col flex-1 min-h-0">
+          <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
+            <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-xs font-bold">2</div>
+            <span className="text-sm font-semibold text-gray-800">Tải lên tệp đã điền</span>
+            <span className="text-xs text-gray-400 ml-1">— Excel (.xlsx, .csv) hoặc ảnh (.jpg, .png), tối đa 25MB</span>
           </div>
           <div
             className="flex-1 flex flex-col items-center justify-center gap-4 m-4 rounded-xl transition-colors cursor-pointer"
             style={{
-              border: `2px dashed ${dragging ? "#2563EB" : "#D1D5DB"}`,
-              background: dragging ? "#EFF6FF" : "transparent",
+              border: `2px dashed ${dragging ? "#2563EB" : (validation && !validation.valid ? "#FCA5A5" : "#D1D5DB")}`,
+              background: dragging ? "#EFF6FF" : (validation && !validation.valid ? "#FEF2F2" : "#FAFAFA"),
             }}
             onDragOver={e => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
-            onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) setFile(f); }}
+            onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) validateAndSetFile(f); }}
             onClick={() => fileRef.current?.click()}
           >
-            <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background:"#EFF6FF" }}>
-              <Upload size={24} color="#2563EB" />
-            </div>
-            <div className="text-center">
-              <p className="font-semibold text-gray-800 text-sm">Kéo &amp; thả tệp vào đây</p>
-              <p className="text-xs text-gray-400 mt-1">hoặc nhấn để chọn từ máy tính</p>
-              {file && <p className="text-xs text-blue-600 font-medium mt-2">{file.name}</p>}
-            </div>
-            <button
-              onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}
-              className="px-5 py-2 rounded-lg text-sm font-semibold text-white hover:opacity-90 transition-opacity"
-              style={{ background:"#2563EB", whiteSpace:"nowrap" }}
-            >
-              Chọn tệp
-            </button>
-            <p className="text-xs text-gray-400">.JPG &nbsp;•&nbsp; .PNG &nbsp;•&nbsp; .XLSX &nbsp;•&nbsp; .CSV — tối đa 25MB</p>
-            <input ref={fileRef} type="file" className="hidden" accept=".jpg,.png,.xlsx,.csv" onChange={e => setFile(e.target.files?.[0] ?? null)} />
+            {!file ? (
+              <>
+                <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background:"#EFF6FF" }}>
+                  <Upload size={28} color="#2563EB" />
+                </div>
+                <div className="text-center">
+                  <p className="font-semibold text-gray-800 text-base">Kéo &amp; thả tệp vào đây</p>
+                  <p className="text-xs text-gray-400 mt-1">hoặc nhấn để chọn từ máy tính</p>
+                </div>
+                <button
+                  onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}
+                  className="px-5 py-2 rounded-lg text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+                  style={{ background:"#2563EB", whiteSpace:"nowrap" }}
+                >
+                  Chọn tệp
+                </button>
+              </>
+            ) : (
+              <div className="flex flex-col items-center gap-3 px-6 py-2 w-full">
+                <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-white border border-gray-200 shadow-sm w-full max-w-md">
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{
+                    background: file.name.match(/\.(xlsx|csv)$/i) ? "#DCFCE7" : "#DBEAFE"
+                  }}>
+                    {file.name.match(/\.(xlsx|csv)$/i) ? (
+                      <FileSpreadsheet size={20} className="text-green-700" />
+                    ) : (
+                      <FileImage size={20} className="text-blue-700" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="font-semibold text-gray-800 text-sm truncate">{file.name}</div>
+                    <div className="text-[11px] text-gray-500">{(file.size / 1024).toFixed(1)} KB</div>
+                  </div>
+                  <button
+                    onClick={e => { e.stopPropagation(); validateAndSetFile(null); }}
+                    className="p-1.5 rounded-md hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
+                    title="Xóa file"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                {/* Validation status */}
+                {validating && (
+                  <div className="flex items-center gap-2 text-xs text-blue-600">
+                    <Loader2 size={14} className="animate-spin" />
+                    Đang kiểm tra cấu trúc file...
+                  </div>
+                )}
+                {!validating && validation?.valid && (
+                  <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 px-3 py-2 rounded-lg border border-green-200 w-full max-w-md">
+                    <CheckCircle2 size={16} />
+                    <span className="font-semibold">Hợp lệ</span>
+                    <span className="text-gray-600">·</span>
+                    <span>{validation.type === "daolo" ? "Template Đào lò" : validation.type === "khai_thac" ? "Template Khai thác" : "Ảnh"}</span>
+                  </div>
+                )}
+                {!validating && validation && !validation.valid && (
+                  <div className="flex items-start gap-2 text-xs text-red-700 bg-red-50 px-3 py-2 rounded-lg border border-red-200 w-full max-w-md">
+                    <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+                    <span className="text-left">{validation.error}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            <input ref={fileRef} type="file" className="hidden" accept=".jpg,.png,.xlsx,.csv" onChange={e => validateAndSetFile(e.target.files?.[0] ?? null)} />
           </div>
         </div>
 
-        {/* Textarea đã bỏ - chỉ upload file */}
+        {/* ─── Bước 3: Hướng dẫn ──────────────────────────────────────────────── */}
+        <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold flex-shrink-0">3</div>
+            <div className="text-sm text-blue-900">
+              <p className="font-semibold mb-1">Sau khi upload → hệ thống sẽ tự động xử lý</p>
+              <p className="text-xs text-blue-700 leading-relaxed">
+                AI sẽ đọc dữ liệu từ file Excel/ảnh của bạn và lưu vào hệ thống. Báo cáo sẽ xuất hiện trong mục <strong>Lịch sử báo cáo</strong> sau vài giây.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Footer */}
@@ -940,7 +1113,7 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
         </button>
         <button
           onClick={handleSubmitReport}
-          disabled={status === "processing"}
+          disabled={status === "processing" || !file || (validation !== null && !validation.valid)}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed"
           style={{ background:"#2563EB", whiteSpace:"nowrap" }}
         >

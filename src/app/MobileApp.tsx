@@ -1212,7 +1212,6 @@ function MobileDetail({ onNav }: { onNav: (t: TabId) => void }) {
 // ─── Màn hình 3: NHẬP BÁO CÁO ────────────────────────────────────────────────
 function MobileSubmit({ onNav }: { onNav: (t: TabId) => void }) {
   const [file, setFile] = useState<File | null>(null);
-  const [text, setText] = useState("");
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState<SubmitStatus>("idle");
   const [errMsg, setErrMsg] = useState("");
@@ -1221,13 +1220,12 @@ function MobileSubmit({ onNav }: { onNav: (t: TabId) => void }) {
 
   const handleSubmit = async () => {
     if (status === "processing") return;
-    if (!file && !text.trim()) {
-      alert("Vui lòng tải lên tệp hoặc nhập nội dung báo cáo!");
+    if (!file) {
+      alert("Vui lòng tải lên tệp báo cáo!");
       return;
     }
     const formData = new FormData();
     if (file) formData.append("file", file);
-    if (text.trim()) formData.append("report_text", text);
     const today = new Date();
     formData.append("ngay_bao_cao", `${pad2(today.getDate())}/${pad2(today.getMonth() + 1)}/${today.getFullYear()}`);
 
@@ -1255,7 +1253,6 @@ function MobileSubmit({ onNav }: { onNav: (t: TabId) => void }) {
       setItems(result);
       setStatus("success");
       setFile(null);
-      setText("");
     } catch (err: any) {
       setErrMsg(err?.message || "Không thể kết nối n8n. Kiểm tra URL webhook.");
       setStatus("error");
@@ -1356,16 +1353,6 @@ function MobileSubmit({ onNav }: { onNav: (t: TabId) => void }) {
               <Download size={11} /> Template mẫu
             </button>
           </div>
-
-          {/* Nhập báo cáo */}
-          <label className="block text-[12px] font-bold text-slate-700 mb-1.5">Nhập báo cáo</label>
-          <textarea
-            value={text}
-            onChange={e => setText(e.target.value)}
-            placeholder="Nhập nội dung báo cáo, ghi chú sự cố hoặc hướng dẫn cho AI phân tích file Excel…"
-            rows={6}
-            className="w-full bg-white border border-slate-200 rounded-xl p-3 text-[13px] text-slate-700 outline-none focus:border-blue-400 leading-relaxed resize-none font-sans"
-          />
         </div>
       </div>
 
@@ -1375,7 +1362,7 @@ function MobileSubmit({ onNav }: { onNav: (t: TabId) => void }) {
         style={{ bottom: 80, borderColor: C.border }}
       >
         <button
-          onClick={() => { setFile(null); setText(""); }}
+          onClick={() => { setFile(null); }}
           className="flex-1 py-3 rounded-xl bg-slate-100 text-slate-500 font-bold text-[13px] active:opacity-70"
         >
           Hủy

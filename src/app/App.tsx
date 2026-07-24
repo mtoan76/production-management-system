@@ -772,7 +772,6 @@ function SubmitOverlay({
 function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
   const [dragging, setDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [text, setText] = useState("");
   const [status, setStatus] = useState<SubmitStatus>("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [reportItems, setReportItems] = useState<ReportItem[]>([]);
@@ -783,8 +782,8 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
     if (status === "processing") return;
 
     // Kiểm tra nếu người dùng chưa nhập gì cả thì cảnh báo
-    if (!file && !text.trim()) {
-      alert("Vui lòng tải lên tệp hoặc nhập nội dung báo cáo!");
+    if (!file) {
+      alert("Vui lòng tải lên tệp báo cáo!");
       return;
     }
 
@@ -793,9 +792,6 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
 
     if (file) {
       formData.append("file", file); // Đính kèm file excel/ảnh
-    }
-    if (text.trim()) {
-      formData.append("report_text", text); // Đính kèm nội dung text
     }
     // Luôn gửi kèm ngày hôm nay (dd/mm/yyyy) -> dùng làm "ngày" mặc định cho các ghi chú
     // không kèm Excel (vì lúc đó không có dòng Excel nào để biết ngày báo cáo là ngày nào)
@@ -850,7 +846,6 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
         setStatus("success");
         // Reset lại form sau khi gửi xong
         setFile(null);
-        setText("");
       } else {
         setErrorMessage(`Server n8n trả về lỗi (mã ${response.status}). Vui lòng kiểm tra workflow.`);
         setStatus("error");
@@ -885,8 +880,8 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
         Nhập báo cáo mới
       </h1>
 
-      <div className="grid grid-cols-2 gap-4 flex-1 min-h-0">
-        {/* Left: Upload */}
+      <div className="flex-1 min-h-0">
+        {/* Upload - chỉ giữ phần tải file */}
         <div className="bg-white rounded-xl border border-gray-200 flex flex-col overflow-hidden">
           <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
             <Upload size={15} color="#2563EB" />
@@ -931,21 +926,7 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
           </div>
         </div>
 
-        {/* Right: Textarea */}
-        <div className="bg-white rounded-xl border border-gray-200 flex flex-col overflow-hidden">
-          <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
-            <List size={15} color="#2563EB" />
-            <span className="text-sm font-semibold text-gray-700">Báo cáo</span>
-          </div>
-          <div className="flex-1 flex flex-col p-4">
-            <textarea
-              className="flex-1 resize-none text-sm text-gray-700 outline-none leading-relaxed placeholder-gray-300"
-              placeholder="Nhập nội dung báo cáo..."
-              value={text}
-              onChange={e => setText(e.target.value)}
-            />
-          </div>
-        </div>
+        {/* Textarea đã bỏ - chỉ upload file */}
       </div>
 
       {/* Footer */}
@@ -953,7 +934,7 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
         <button
           className="px-5 py-2.5 rounded-lg text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors"
           style={{ whiteSpace:"nowrap" }}
-          onClick={() => { setFile(null); setText(""); }}
+          onClick={() => { setFile(null); }}
         >
           Hủy
         </button>

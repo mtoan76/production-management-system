@@ -1856,27 +1856,29 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
       ? totalDaysYear
       : 0;
 
-  // Lấy KPI tháng hiện tại từ monthSummary (lũy kế tháng)
-  const monthSL = monthSummary ? Number(monthSummary.san_luong_luy_ke) || 0 : 0;
-  const monthTD = monthSummary ? Number(monthSummary.tien_do_luy_ke) || 0 : 0;
-
-  // Kế hoạch tháng: hiện chưa có API riêng → dùng placeholder = tháng × (kế hoạch năm / 12)
-  // Sau này có thể thay bằng API /api/ke-hoach-thang khi backend có
-  const keHoachThangSL = kpiSanLuongKeHoach / 12;
-  const keHoachThangTD = kpiTienDoKeHoach / 12;
-
-  // Tính "Còn lại" theo chartView
-  // month view → còn lại = KH năm - lũy kế năm
-  // day view   → còn lại = KH tháng - lũy kế tháng
-  const conLaiSL = chartView === "month"
-    ? Math.max(kpiSanLuongKeHoach - kpiSanLuong, 0)
-    : Math.max(keHoachThangSL - monthSL, 0);
-  const conLaiTD = chartView === "month"
-    ? Math.max(kpiTienDoKeHoach - kpiTienDoThucTe, 0)
-    : Math.max(keHoachThangTD - monthTD, 0);
+  // Lấy lũy kế theo từng loại từ data API mới (4 loại)
+  type LoaiCongViec = "lo_cho" | "dao_lo" | "xen_lo" | "chong_doi";
+  const LOAI_LIST: { type: LoaiCongViec; gradient: [string, string]; unit: string }[] = [
+    { type: "lo_cho",   gradient: ["#1E40AF", "#2563EB"], unit: "tấn" },
+    { type: "dao_lo",   gradient: ["#92400E", "#D97706"], unit: "mét" },
+    { type: "xen_lo",    gradient: ["#065F46", "#10B981"], unit: "mét" },
+    { type: "chong_doi", gradient: ["#7C2D12", "#EA580C"], unit: "mét" },
+  ];
+  // Lấy lũy kế tháng hiện tại (cumulative từ ngày đầu tháng tới ngày chọn)
+  const lastDayRow = dayData.length > 0 ? dayData[dayData.length - 1] : null;
+  // Build per-type giá trị theo viewMode
+  // month view → lấy từ kpi (year cumulative)
+  // day view → lấy từ lastDayRow (month cumulative)
+  const typeValues: Record<LoaiCongViec, { current: number; unit: string; keHoachNam: number; keHoachThang: number }> = {} as any;
+  for (const { type, unit } of LOAI_LIST) {
+    const keHoachNam = (kpi as any)?.[type]?.ke_hoach_nam || 0;
+    const currentYear = Number((kpi as any)?.[type]?.thuc_te) || 0;
+    const currentMonth = lastDayRow ? Number((lastDayRow as any)[type + "_luy_ke"]) || 0 : 0;
+    const current = chartView === "month" ? currentYear : currentMonth;
+    const keHoachThang = Math.round(keHoachNam / 12);
+    typeValues[type] = { current, unit, keHoachNam, keHoachThang };
+  }
   const remainingDays = chartView === "month" ? remainingDaysYear : remainingDaysMonth;
-  const tbSLNgay = remainingDays > 0 ? conLaiSL / remainingDays : 0;
-  const tbTDNgay = remainingDays > 0 ? conLaiTD / remainingDays : 0;
   const periodLabel = chartView === "month" ? "năm" : "tháng";
 
   // Chỉ hiển đúng 7 cột/điểm trong khung nhìn, phần còn lại cuộn ngang để xem tiếp.
@@ -1982,18 +1984,29 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
         </div>
       )}
 
-      {/* ─── Section 1: 2 KPI cards (chỉ detail, KHÔNG có chart) ────────────────── */}
+      {/* ─── Section 1: 4 KPI cards (Sản lượng / Đào lò / Xén lò / Chống đội) ────── */}
       <div className="grid grid-cols-2 gap-6">
-        {/* Card 1: Sản lượng lũy kế (gradient xanh) */}
-        <div
-          onClick={() => setChartModalOpen("prod")}
-          className="rounded-2xl overflow-hidden shadow-lg p-6 flex flex-col cursor-pointer hover:shadow-2xl transition-shadow"
-          style={{ background: "linear-gradient(135deg,#1E40AF,#2563EB)", boxShadow: "0 4px 20px rgba(37,99,235,0.3)" }}
-          title="Click để xem biểu đồ sản lượng chi tiết"
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setChartModalOpen("prod"); }}
-        >
+        {/* ─── 4 KPI cards dynamic theo LOAI_LIST ──────────────────────────── */}
+        {LOAI_LIST.map(({ type, gradient, unit }) => {
+          const val = typeValues[type];
+          const keHoach = chartView === "month" ? val.keHoachNam : val.keHoachThang;
+          const phanTram = val.keHoachNam > 0 ? Math.round((val.current / val.keHoachNam) * 1000) / 10 : 0;
+          const conLai = Math.max(keHoach - val.current, 0);
+          const tbNgay = remainingDays > 0 ? conLai / remainingDays : 0;
+          const loaiLabelMap: Record<string, string> = {
+            lo_cho: "Sản lượng", dao_lo: "Đào lò", xen_lo: "Xén lò", chong_doi: "Chống đội",
+          };
+          return (
+            <div
+              key={type}
+              onClick={() => setChartModalOpen(type as "prod" | "prog")}
+              className="rounded-2xl overflow-hidden shadow-lg p-6 flex flex-col cursor-pointer hover:shadow-2xl transition-shadow"
+              style={{ background: `linear-gradient(135deg,${gradient[0]},${gradient[1]})`, boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}
+              title={`Click để xem biểu đồ ${loaiLabelMap[type]} chi tiết`}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setChartModalOpen(type as "prod" | "prog"); }}
+            >
           <div className="flex justify-between items-start w-full mb-2">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-gray-400">SẢN LƯỢNG LŨY KẾ</p>
@@ -2042,64 +2055,9 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
           </div>
         </div>
 
-        {/* Card 2: Tiến độ đào lò lũy kế (gradient cam) - click để xem biểu đồ */}
-        <div
-          onClick={() => setChartModalOpen("prog")}
-          className="rounded-2xl overflow-hidden shadow-lg p-6 flex flex-col cursor-pointer hover:shadow-2xl transition-shadow"
-          style={{ background: "linear-gradient(135deg,#92400E,#D97706)", boxShadow: "0 4px 20px rgba(217,119,6,0.3)" }}
-          title="Click để xem biểu đồ tiến độ chi tiết"
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setChartModalOpen("prog"); }}
-        >
-          <div className="flex justify-between items-start w-full mb-2">
-            <div>
-              <p className="text-[13px] text-white/75 font-semibold leading-tight">Tiến độ đào lò lũy kế</p>
-              <p className="text-[11px] text-white/60 mt-0.5">
-                {loadingOverview ? "Đang tải..." : chartView === "month" ? `Năm ${selectedYear}` : `Tháng ${selectedMonth}/${selectedYear}`}
-              </p>
-              <div className="mt-3">
-                <span
-                  className="text-[36px] font-black text-white tracking-tight leading-none"
-                >
-                  {Math.round(kpiTienDoThucTe).toLocaleString("vi-VN")}
-                </span>
-                <span className="text-white/85 text-sm font-medium ml-1">
-                  / {Math.round(chartView === "month" ? kpiTienDoKeHoach : keHoachThangTD).toLocaleString("vi-VN")} mét
-                </span>
-              </div>
-              <p className="text-[11px] text-white/85 mt-1.5">
-                Kế hoạch {chartView === "month" ? "năm" : "tháng"}: <strong className="text-white">
-                  {chartView === "month"
-                    ? Math.round(kpiTienDoKeHoach).toLocaleString("vi-VN")
-                    : Math.round(keHoachThangTD).toLocaleString("vi-VN")}
-                </strong> mét
-              </p>
-            </div>
-
-            <div className="bg-white/20 rounded-full px-3 py-1.5 text-[18px] font-bold text-white flex items-center gap-1 flex-shrink-0 leading-none">
-              <ArrowUpRight size={16} />
-              {Math.round(kpiTienDoTyLe).toLocaleString("vi-VN")}%
-            </div>
-          </div>
-
-          {/* Hàng Còn lại + TB cần/ngày */}
-          <div className="grid grid-cols-2 gap-3 mt-3 p-3 rounded-xl bg-black/15">
-            <div className="text-left">
-              <div className="text-[13px] text-white/85 mb-1 font-medium">Còn lại ({periodLabel})</div>
-              <div className="text-[22px] font-extrabold text-white leading-tight">
-                {Math.round(conLaiTD).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">mét</span>
-              </div>
-            </div>
-            <div className="text-left">
-              <div className="text-[13px] text-white/85 mb-1 font-medium">TB cần/ngày ({remainingDays} ngày)</div>
-              <div className="text-[22px] font-extrabold text-white leading-tight">
-                {Math.round(tbTDNgay).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">mét</span>
-              </div>
-            </div>
-           </div>
-         </div>
-       </div>
+          );
+        })}
+      </div>
 
         {/* ─── Section 2: Bảng chi tiết đường lò (theo tháng) ─────────────────────────── */}
         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm p-6 pb-4">

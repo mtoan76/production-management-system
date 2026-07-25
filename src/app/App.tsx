@@ -951,16 +951,16 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
   };
 
   return (
-    <div className="p-8 h-full flex flex-col relative">
+    <div className="p-8 min-h-full flex flex-col relative">
       <SubmitOverlay status={status} errorMessage={errorMessage} reportItems={reportItems} onClose={closeOverlay} onNavigate={onNavigate} />
 
       <h1 className="text-2xl font-semibold text-gray-900 mb-6" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
         Nhập báo cáo mới
       </h1>
 
-      <div className="flex-1 min-h-0 flex flex-col gap-5">
+      <div className="flex-1 min-h-0 flex flex-col gap-6">
         {/* ─── Bước 1: Tải template mẫu (2 lựa chọn) ───────────────────────── */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-xs font-bold">1</div>
             <span className="text-sm font-semibold text-gray-800">Tải template mẫu</span>
@@ -1004,7 +1004,7 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
             <span className="text-xs text-gray-400 ml-1">— chỉ chấp nhận Excel (.xlsx) theo đúng template mẫu, tối đa 25MB</span>
           </div>
           <div
-            className="flex-1 flex flex-col items-center justify-center gap-6 m-6 py-10 px-8 rounded-xl transition-colors cursor-pointer"
+            className="flex-1 min-h-[420px] flex flex-col items-center justify-center gap-8 m-6 py-16 px-10 rounded-xl transition-colors cursor-pointer"
             style={{
               border: `2px dashed ${dragging ? "#2563EB" : (validation && !validation.valid ? "#FCA5A5" : "#D1D5DB")}`,
               background: dragging ? "#EFF6FF" : (validation && !validation.valid ? "#FEF2F2" : "#FAFAFA"),
@@ -1016,16 +1016,16 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
           >
             {!file ? (
               <>
-                <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background:"#EFF6FF" }}>
-                  <Upload size={28} color="#2563EB" />
+                <div className="w-20 h-20 rounded-full flex items-center justify-center" style={{ background:"#EFF6FF" }}>
+                  <Upload size={36} color="#2563EB" />
                 </div>
                 <div className="text-center">
-                  <p className="font-semibold text-gray-800 text-base">Kéo &amp; thả tệp vào đây</p>
-                  <p className="text-xs text-gray-400 mt-1.5">hoặc nhấn để chọn từ máy tính</p>
+                  <p className="font-semibold text-gray-800 text-lg">Kéo &amp; thả tệp vào đây</p>
+                  <p className="text-sm text-gray-400 mt-2">hoặc nhấn để chọn từ máy tính</p>
                 </div>
                 <button
                   onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}
-                  className="px-5 py-2 rounded-lg text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+                  className="px-6 py-2.5 rounded-lg text-sm font-semibold text-white hover:opacity-90 transition-opacity"
                   style={{ background:"#2563EB", whiteSpace:"nowrap" }}
                 >
                   Chọn tệp

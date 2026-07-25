@@ -12,6 +12,7 @@ import {
   AlertTriangle, CheckCircle, AlertCircle, Search, X, ChevronRight, ChevronDown,
   Loader2, Download, Clock, MapPin, User, Layers, Package, ArrowUpRight,
   Info, Calendar, RefreshCw, Eye, Filter, Sparkles, Shield, CheckCircle2,
+  FileSpreadsheet, FileImage,
 } from "lucide-react";
 
 // ─── URL server (đồng bộ với Desktop) ────────────────────────────────────────
@@ -1210,18 +1211,81 @@ function MobileDetail({ onNav }: { onNav: (t: TabId) => void }) {
 }
 
 // ─── Màn hình 3: NHẬP BÁO CÁO ────────────────────────────────────────────────
+type MobileTemplateType = "daolo" | "khai_thac";
+type MobileFileValidation = { valid: boolean; type?: MobileTemplateType; error?: string };
+const MOBILE_TEMPLATE_FILES: Record<MobileTemplateType, { url: string; name: string; label: string }> = {
+  daolo: { url: "/templates/baocaocongtruong_daolo.xlsx", name: "baocaocongtruong_daolo.xlsx", label: "Đào lò" },
+  khai_thac: { url: "/templates/baocaocongtruong_Khai thac.xlsx", name: "baocaocongtruong_Khai thac.xlsx", label: "Khai thác" },
+};
+
+// Validate file Excel: check Row 2 headers (giống desktop)
+async function validateMobileExcelFile(file: File): Promise<MobileFileValidation> {
+  if (file.name.match(/\.(jpg|jpeg|png)$/i)) return { valid: true };
+  if (!file.name.match(/\.(xlsx|csv)$/i)) {
+    return { valid: false, error: "File phải là Excel (.xlsx, .csv) hoặc ảnh (.jpg, .png)" };
+  }
+  try {
+    const buffer = await file.arrayBuffer();
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(buffer);
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    if (!sheet?.["!ref"]) return { valid: false, error: "File Excel rỗng" };
+    const range = XLSX.utils.decode_range(sheet["!ref"]!);
+    const headers: string[] = [];
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const addr = XLSX.utils.encode_cell({ r: 2, c });
+      headers.push(sheet[addr]?.v?.toString().trim() || "");
+    }
+    const col5 = (headers[5] || "").toLowerCase();
+    if (col5.includes("tấn than") || col5.includes("lò chợ")) return { valid: true, type: "khai_thac" };
+    if (col5.includes("đường lò đào")) return { valid: true, type: "daolo" };
+    return {
+      valid: false,
+      error: "File không đúng cấu trúc template. Vui lòng tải template mẫu và điền theo đúng định dạng.",
+    };
+  } catch (e: any) {
+    return { valid: false, error: "Không thể đọc file Excel: " + (e?.message || "lỗi không xác định") };
+  }
+}
+
 function MobileSubmit({ onNav }: { onNav: (t: TabId) => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [validation, setValidation] = useState<MobileFileValidation | null>(null);
+  const [validating, setValidating] = useState(false);
   const [status, setStatus] = useState<SubmitStatus>("idle");
   const [errMsg, setErrMsg] = useState("");
   const [items, setItems] = useState<ReportItem[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const validateAndSetMobileFile = async (f: File | null) => {
+    setFile(f);
+    setValidation(null);
+    if (!f) return;
+    setValidating(true);
+    const result = await validateMobileExcelFile(f);
+    setValidation(result);
+    setValidating(false);
+  };
+
+  const handleDownloadMobileTemplate = (type: MobileTemplateType) => {
+    const tpl = MOBILE_TEMPLATE_FILES[type];
+    const link = document.createElement("a");
+    link.href = tpl.url;
+    link.download = tpl.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleSubmit = async () => {
     if (status === "processing") return;
     if (!file) {
       alert("Vui lòng tải lên tệp báo cáo!");
+      return;
+    }
+    if (validation && !validation.valid) {
+      alert(validation.error || "File không hợp lệ");
       return;
     }
     const formData = new FormData();
@@ -1261,15 +1325,6 @@ function MobileSubmit({ onNav }: { onNav: (t: TabId) => void }) {
 
   const closeOverlay = () => { setStatus("idle"); setItems([]); };
 
-  const handleDownload = () => {
-    const link = document.createElement("a");
-    link.href = "/templates/Report_Template.xlsx";
-    link.download = "Report_Template.xlsx";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {/* Header */}
@@ -1289,34 +1344,59 @@ function MobileSubmit({ onNav }: { onNav: (t: TabId) => void }) {
             onDrop={e => {
               e.preventDefault(); setDragging(false);
               const f = e.dataTransfer?.files?.[0];
-              if (f) setFile(f);
+              if (f) validateAndSetMobileFile(f);
             }}
             onClick={() => fileRef.current?.click()}
             className="rounded-2xl p-5 text-center mb-3 cursor-pointer"
             style={{
-              border: `2px dashed ${dragging ? C.primary : file ? C.success : C.border}`,
-              background: dragging ? C.primaryLight : file ? C.successLight : C.card,
+              border: `2px dashed ${dragging ? C.primary : (validation && !validation.valid ? "#FCA5A5" : file ? C.success : C.border)}`,
+              background: dragging ? C.primaryLight : (validation && !validation.valid ? "#FEF2F2" : file ? C.successLight : C.card),
             }}
           >
             <input
               ref={fileRef}
               type="file"
-              accept=".xlsx"
+              accept=".jpg,.jpeg,.png,.xlsx,.csv"
               className="hidden"
               onChange={e => {
                 const f = e.target.files?.[0];
-                if (f) setFile(f);
+                if (f) validateAndSetMobileFile(f);
               }}
             />
             {file ? (
               <>
-                <div className="w-12 h-12 mx-auto mb-2 rounded-xl flex items-center justify-center" style={{ background: C.successLight }}>
-                  <CheckCircle2 size={26} className="text-emerald-600" />
+                <div className="w-12 h-12 mx-auto mb-2 rounded-xl flex items-center justify-center" style={{
+                  background: validation && !validation.valid ? "#FEE2E2" : C.successLight
+                }}>
+                  {file.name.match(/\.(xlsx|csv)$/i) ? (
+                    <FileSpreadsheet size={26} className={validation && !validation.valid ? "text-red-600" : "text-emerald-600"} />
+                  ) : (
+                    <FileImage size={26} className={validation && !validation.valid ? "text-red-600" : "text-emerald-600"} />
+                  )}
                 </div>
-                <div className="font-bold text-emerald-700 text-[13px]">{file.name}</div>
+                <div className={`font-bold text-[13px] ${validation && !validation.valid ? "text-red-700" : "text-emerald-700"}`}>{file.name}</div>
                 <div className="text-[11px] text-slate-500 mt-0.5">{(file.size / 1024).toFixed(1)} KB</div>
+
+                {/* Validation status */}
+                {validating && (
+                  <div className="mt-2 flex items-center justify-center gap-1.5 text-[11px] text-blue-600">
+                    <Loader2 size={12} className="animate-spin" />
+                    Đang kiểm tra...
+                  </div>
+                )}
+                {!validating && validation?.valid && (
+                  <div className="mt-2 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md inline-block">
+                    ✓ {validation.type === "daolo" ? "Đào lò" : validation.type === "khai_thac" ? "Khai thác" : "Ảnh"}
+                  </div>
+                )}
+                {!validating && validation && !validation.valid && (
+                  <div className="mt-2 text-[10px] text-red-700 bg-red-50 px-2 py-1.5 rounded-md leading-tight max-w-xs">
+                    ⚠ {validation.error}
+                  </div>
+                )}
+
                 <button
-                  onClick={e => { e.stopPropagation(); setFile(null); }}
+                  onClick={e => { e.stopPropagation(); validateAndSetMobileFile(null); }}
                   className="mt-2 text-[11px] font-semibold text-red-600 bg-red-50 rounded-md px-3 py-1"
                 >
                   Xóa file
@@ -1331,7 +1411,7 @@ function MobileSubmit({ onNav }: { onNav: (t: TabId) => void }) {
                   <Upload size={22} color={dragging ? C.primary : "#94A3B8"} />
                 </div>
                 <div className="font-bold text-slate-800 text-[13px]">Kéo thả file hoặc nhấn để chọn</div>
-                <div className="text-[11px] text-slate-500 mt-1 mb-3">Chỉ hỗ trợ file Excel (.xlsx) — tối đa 25MB</div>
+                <div className="text-[11px] text-slate-500 mt-1 mb-3">Excel (.xlsx, .csv) hoặc ảnh (.jpg, .png) — tối đa 25MB</div>
                 <button
                   onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}
                   className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-[12px] font-bold active:opacity-80"
@@ -1342,16 +1422,22 @@ function MobileSubmit({ onNav }: { onNav: (t: TabId) => void }) {
             )}
           </div>
 
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex gap-1.5">
-              <span className="bg-white border border-slate-200 text-slate-500 text-[10px] font-bold rounded-md px-2 py-0.5">XLSX</span>
+          <div className="flex items-center justify-between mb-3 gap-2">
+            <div className="flex gap-1 flex-1">
+              <button
+                onClick={() => handleDownloadMobileTemplate("daolo")}
+                className="flex-1 flex items-center justify-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-2 py-1 active:opacity-70"
+              >
+                <FileSpreadsheet size={11} /> Đào lò
+              </button>
+              <button
+                onClick={() => handleDownloadMobileTemplate("khai_thac")}
+                className="flex-1 flex items-center justify-center gap-1 text-[10px] font-bold text-orange-700 bg-orange-50 border border-orange-200 rounded-md px-2 py-1 active:opacity-70"
+              >
+                <FileSpreadsheet size={11} /> Khai thác
+              </button>
             </div>
-            <button
-              onClick={handleDownload}
-              className="text-blue-600 text-[11px] font-bold flex items-center gap-1 active:opacity-70"
-            >
-              <Download size={11} /> Template mẫu
-            </button>
+            <span className="text-[10px] text-slate-500">tối đa 25MB</span>
           </div>
         </div>
       </div>
@@ -1369,7 +1455,7 @@ function MobileSubmit({ onNav }: { onNav: (t: TabId) => void }) {
         </button>
         <button
           onClick={handleSubmit}
-          disabled={status === "processing" || !file}
+          disabled={status === "processing" || !file || (validation !== null && !validation.valid)}
           className="flex-[2] py-3 rounded-xl text-white font-bold text-[13px] flex items-center justify-center gap-2 disabled:cursor-not-allowed active:opacity-80"
           style={{
             background: !file

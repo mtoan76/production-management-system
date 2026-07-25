@@ -1346,7 +1346,7 @@ function MobileSubmit({ onNav }: { onNav: (t: TabId) => void }) {
               if (f) validateAndSetMobileFile(f);
             }}
             onClick={() => fileRef.current?.click()}
-            className="rounded-2xl p-5 text-center mb-3 cursor-pointer"
+            className="rounded-2xl p-6 text-center mb-3 cursor-pointer"
             style={{
               border: `2px dashed ${dragging ? C.primary : (validation && !validation.valid ? "#FCA5A5" : file ? C.success : C.border)}`,
               background: dragging ? C.primaryLight : (validation && !validation.valid ? "#FEF2F2" : file ? C.successLight : C.card),

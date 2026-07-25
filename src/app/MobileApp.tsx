@@ -1220,9 +1220,8 @@ const MOBILE_TEMPLATE_FILES: Record<MobileTemplateType, { url: string; name: str
 
 // Validate file Excel: check Row 2 headers (giống desktop)
 async function validateMobileExcelFile(file: File): Promise<MobileFileValidation> {
-  if (file.name.match(/\.(jpg|jpeg|png)$/i)) return { valid: true };
-  if (!file.name.match(/\.(xlsx|csv)$/i)) {
-    return { valid: false, error: "File phải là Excel (.xlsx, .csv) hoặc ảnh (.jpg, .png)" };
+  if (!file.name.match(/\.xlsx$/i)) {
+    return { valid: false, error: "Chỉ chấp nhận file Excel (.xlsx) theo đúng template mẫu. Vui lòng tải template Đào lò hoặc Khai thác." };
   }
   try {
     const buffer = await file.arrayBuffer();

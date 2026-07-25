@@ -791,14 +791,9 @@ const TEMPLATE_FILES: Record<TemplateType, { url: string; name: string; label: s
 
 // Validate file Excel: check Row 2 headers to determine template type
 async function validateExcelFile(file: File): Promise<FileValidation> {
-  const imageMatch = file.name.match(/\.(jpg|jpeg|png)$/i);
-  if (imageMatch) {
-    // Ảnh chụp: chấp nhận (sẽ parse bằng OCR ở n8n)
-    return { valid: true, type: undefined };
-  }
-  const excelMatch = file.name.match(/\.(xlsx|csv)$/i);
+  const excelMatch = file.name.match(/\.xlsx$/i);
   if (!excelMatch) {
-    return { valid: false, error: "File phải là Excel (.xlsx, .csv) hoặc ảnh (.jpg, .png)" };
+    return { valid: false, error: "Chỉ chấp nhận file Excel (.xlsx) theo đúng template mẫu. Vui lòng tải template Đào lò hoặc Khai thác ở mục 1." };
   }
   try {
     const buffer = await file.arrayBuffer();
@@ -1006,10 +1001,10 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
           <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
             <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-xs font-bold">2</div>
             <span className="text-sm font-semibold text-gray-800">Tải lên tệp đã điền</span>
-            <span className="text-xs text-gray-400 ml-1">— Excel (.xlsx, .csv) hoặc ảnh (.jpg, .png), tối đa 25MB</span>
+            <span className="text-xs text-gray-400 ml-1">— chỉ chấp nhận Excel (.xlsx) theo đúng template mẫu, tối đa 25MB</span>
           </div>
           <div
-            className="flex-1 flex flex-col items-center justify-center gap-4 m-4 rounded-xl transition-colors cursor-pointer"
+            className="flex-1 flex flex-col items-center justify-center gap-6 m-6 py-10 px-8 rounded-xl transition-colors cursor-pointer"
             style={{
               border: `2px dashed ${dragging ? "#2563EB" : (validation && !validation.valid ? "#FCA5A5" : "#D1D5DB")}`,
               background: dragging ? "#EFF6FF" : (validation && !validation.valid ? "#FEF2F2" : "#FAFAFA"),
@@ -1026,7 +1021,7 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
                 </div>
                 <div className="text-center">
                   <p className="font-semibold text-gray-800 text-base">Kéo &amp; thả tệp vào đây</p>
-                  <p className="text-xs text-gray-400 mt-1">hoặc nhấn để chọn từ máy tính</p>
+                  <p className="text-xs text-gray-400 mt-1.5">hoặc nhấn để chọn từ máy tính</p>
                 </div>
                 <button
                   onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}
@@ -1084,20 +1079,7 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
                 )}
               </div>
             )}
-            <input ref={fileRef} type="file" className="hidden" accept=".jpg,.png,.xlsx,.csv" onChange={e => validateAndSetFile(e.target.files?.[0] ?? null)} />
-          </div>
-        </div>
-
-        {/* ─── Bước 3: Hướng dẫn ──────────────────────────────────────────────── */}
-        <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-4">
-          <div className="flex items-start gap-3">
-            <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold flex-shrink-0">3</div>
-            <div className="text-sm text-blue-900">
-              <p className="font-semibold mb-1">Sau khi upload → hệ thống sẽ tự động xử lý</p>
-              <p className="text-xs text-blue-700 leading-relaxed">
-                AI sẽ đọc dữ liệu từ file Excel/ảnh của bạn và lưu vào hệ thống. Báo cáo sẽ xuất hiện trong mục <strong>Lịch sử báo cáo</strong> sau vài giây.
-              </p>
-            </div>
+            <input ref={fileRef} type="file" className="hidden" accept=".xlsx" onChange={e => validateAndSetFile(e.target.files?.[0] ?? null)} />
           </div>
         </div>
       </div>

@@ -8,42 +8,34 @@ function clampInt(v, fallback) {
   return Number.isNaN(n) ? fallback : n;
 }
 
-// GET /api/bao-cao        — LIST các báo cáo đã nộp (gom theo report_id)
-// GET /api/bao-cao/:id    — DETAIL 1 báo cáo (cả 4 bảng)
+// GET /api/bao-cao        — LIST các báo cáo đã nộp (gom theo report_id từ bao_cao)
 router.get("/", async (req, res, next) => {
   try {
     const limit = Math.min(clampInt(req.query.limit, 200), 500);
 
     const query = `
       SELECT
-        r.id AS report_id,
-        r.created_at,
-        a.ngay,
-        a.ca,
-        a.duong_lo,
-        a.don_vi_thi_cong,
-        a.nguoi_bao_cao,
-        (SELECT COUNT(*) FROM nhat_ky_ai_output  WHERE report_id = r.id) AS so_dong_ai,
-        (SELECT COUNT(*) FROM nhat_ky_duong_lo WHERE report_id = r.id) AS so_dong_duong_lo,
-        EXISTS (SELECT 1 FROM nhat_ky_text_raw  WHERE report_id = r.id) AS co_text,
+        bc.id AS report_id,
+        bc.created_at,
+        bcct.ngay,
+        bcct.ca,
+        (SELECT COUNT(*) FROM bao_cao_hang_muc bch WHERE bch.bao_cao_cong_truong_id = bcct.id) AS so_hang_muc,
         COALESCE(
           (
             SELECT
               CASE
-                WHEN bool_or(tinh_trang = 'Nghiêm trọng') THEN 'Nghiêm trọng'
-                WHEN bool_or(tinh_trang = 'Cảnh báo')     THEN 'Cảnh báo'
-                WHEN bool_or(tinh_trang = 'Bình thường')  THEN 'Bình thường'
-                ELSE 'Bình thường'
+                WHEN bool_or(bch.loai_cong_viec = 'lo_cho') THEN 'Có sản lượng'
+                ELSE 'Không có sản lượng'
               END
-            FROM nhat_ky_ai_output WHERE report_id = r.id
+            FROM bao_cao_hang_muc bch WHERE bch.bao_cao_cong_truong_id = bcct.id
           ),
-          'Bình thường'
+          'Không có dữ liệu'
         ) AS tinh_trang
-      FROM nhat_ky_report r
+      FROM bao_cao bc
       LEFT JOIN LATERAL (
-        SELECT * FROM nhat_ky_ai_output WHERE report_id = r.id ORDER BY id DESC LIMIT 1
-      ) a ON true
-      ORDER BY r.created_at DESC, r.id DESC
+        SELECT * FROM bao_cao_cong_truong WHERE bao_cao_id = bc.id ORDER BY id DESC LIMIT 1
+      ) bcct ON true
+      ORDER BY bc.created_at DESC, bc.id DESC
       LIMIT $1;
     `;
 
@@ -54,6 +46,7 @@ router.get("/", async (req, res, next) => {
   }
 });
 
+// GET /api/bao-cao/:id    — DETAIL 1 báo cáo (cả 3 bảng mới)
 router.get("/:id", async (req, res, next) => {
   try {
     if (!/^\d+$/.test(req.params.id)) {
@@ -61,11 +54,16 @@ router.get("/:id", async (req, res, next) => {
     }
     const reportId = parseInt(req.params.id, 10);
 
-    const [reportRes, aiRes, duongLoRes, textRawRes] = await Promise.all([
-      pool.query("SELECT * FROM nhat_ky_report    WHERE id = $1", [reportId]),
-      pool.query("SELECT * FROM nhat_ky_ai_output  WHERE report_id = $1 ORDER BY id", [reportId]),
-      pool.query("SELECT * FROM nhat_ky_duong_lo WHERE report_id = $1 ORDER BY id", [reportId]),
-      pool.query("SELECT * FROM nhat_ky_text_raw  WHERE report_id = $1 LIMIT 1", [reportId]),
+    const [reportRes, congTruongRes, hangMucRes] = await Promise.all([
+      pool.query("SELECT * FROM bao_cao WHERE id = $1", [reportId]),
+      pool.query("SELECT * FROM bao_cao_cong_truong WHERE bao_cao_id = $1 ORDER BY id", [reportId]),
+      pool.query(`
+        SELECT bch.*, bcct.ngay, bcct.ca, bcct.duong_lo
+        FROM bao_cao_hang_muc bch
+        JOIN bao_cao_cong_truong bcct ON bcct.id = bch.bao_cao_cong_truong_id
+        WHERE bcct.bao_cao_id = $1
+        ORDER BY bch.id
+      `, [reportId]),
     ]);
 
     if (reportRes.rowCount === 0) {
@@ -73,10 +71,9 @@ router.get("/:id", async (req, res, next) => {
     }
 
     res.json({
-      report:    reportRes.rows[0],
-      ai_output: aiRes.rows,
-      duong_lo:  duongLoRes.rows,
-      text_raw:  textRawRes.rows[0] || null,
+      report: reportRes.rows[0],
+      cong_truong: congTruongRes.rows,
+      hang_muc: hangMucRes.rows,
     });
   } catch (err) {
     next(err);

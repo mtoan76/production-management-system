@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import * as React from 'react';
+import { useState, useRef, useEffect, useMemo, createElement, Component, ErrorInfo, ReactNode } from "react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,AreaChart, Area,
   Tooltip,
@@ -449,26 +450,25 @@ const N8N_CANH_BAO_DETAIL_URL =
 
 // ─── Kiểu dữ liệu trả về từ 2 truy vấn tổng quan ───────────
 type MonthSummary = {
-  thang: string;
-  tong_san_luong: string;
-  tong_tien_do: string;
-  san_luong_luy_ke: string;
-  tien_do_luy_ke: string;
+  thang: string | number;
+  lo_cho_luy_ke: string | number;
+  dao_lo_luy_ke: string | number;
+  xen_lo_luy_ke: string | number;
+  chong_doi_luy_ke: string | number;
 };
 type DaySummary = {
   ngay: string;
-  san_luong_ngay: string;
-  tien_do_ngay: string;
-  san_luong_luy_ke: string;
-  tien_do_luy_ke: string;
+  lo_cho_luy_ke: string | number;
+  dao_lo_luy_ke: string | number;
+  xen_lo_luy_ke: string | number;
+  chong_doi_luy_ke: string | number;
 };
+type KpiLoaiItem = { thuc_te: number; ke_hoach_nam: number; ty_le: number };
 type KpiSummary = {
-  san_luong_thuc_te: number;
-  san_luong_ke_hoach: number;
-  san_luong_ty_le: number;
-  tien_do_thuc_te: number;
-  tien_do_ke_hoach: number;
-  tien_do_ty_le: number;
+  lo_cho: KpiLoaiItem;
+  dao_lo: KpiLoaiItem;
+  xen_lo: KpiLoaiItem;
+  chong_doi: KpiLoaiItem;
 };
 type TunnelData = {
   duong_lo: string;
@@ -1792,7 +1792,7 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
   );
 
   // State cho chart modal (khi click vào số liệu chính)
-  const [chartModalOpen, setChartModalOpen] = useState<null | "prod" | "prog">(null);
+  const [chartModalOpen, setChartModalOpen] = useState<null | "lo_cho" | "dao_lo" | "xen_lo" | "chong_doi">(null);
   // tunnelRows, tunnelLoading, monthSummary, daySummary, kpi đã lấy từ useOverviewCache ở trên
 
   // ─── Dữ liệu tổng quan - dùng hook với module-level cache ─────────────
@@ -1810,21 +1810,68 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
   const monthList = overviewCacheData?.monthList ?? [];
   const tunnelRows = overviewCacheData?.tunnelRows ?? [];
 
-  // Bảng dữ liệu theo ngày trong tháng, dùng cho cả 2 biểu đồ
-  const dayProdChart = daySummary.map(d => ({ day: d.ngay, value: Number(d.san_luong_luy_ke) || 0 }));
-  const dayProgChart = daySummary.map(d => ({ day: d.ngay, value: Number(d.tien_do_luy_ke) || 0 }));
+  // ─── Kế hoạch tháng (chia đều từ kế hoạch năm) ─────────────────────────────
+  const kpiSLKH = (kpi as any)?.lo_cho?.ke_hoach_nam ?? 0;
+  const kpiTDKH = (kpi as any)?.dao_lo?.ke_hoach_nam ?? 0;
+  const keHoachThangSL = Number(kpiSLKH) / 12;
+  const keHoachThangTD = Number(kpiTDKH) / 12;
+
+  // ─── Số ngày còn lại trong tháng/năm hiện tại (để tính TB cần/ngày) ───────
+  const today = new Date();
+  const daysInSelectedMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+  const isSelectedCurrentMonth = selectedYear === today.getFullYear() && selectedMonth === today.getMonth() + 1;
+  const isSelectedFutureMonth = selectedYear > today.getFullYear() || (selectedYear === today.getFullYear() && selectedMonth > today.getMonth() + 1);
+  const remainingDaysMonth = isSelectedCurrentMonth
+    ? Math.max(daysInSelectedMonth - today.getDate(), 0)
+    : isSelectedFutureMonth
+      ? daysInSelectedMonth
+      : 0;
+
+  const isLeapYear = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const totalDaysYear = isLeapYear(selectedYear) ? 366 : 365;
+  const isSelectedCurrentYear = selectedYear === today.getFullYear();
+  const isSelectedFutureYear = selectedYear > today.getFullYear();
+  const dayOfYearToday = Math.floor((today.getTime() - new Date(selectedYear, 0, 1).getTime()) / 86400000) + 1;
+  const remainingDaysYear = isSelectedCurrentYear
+    ? Math.max(totalDaysYear - dayOfYearToday, 0)
+    : isSelectedFutureYear
+      ? totalDaysYear
+      : 0;
+
+  // Bảng dữ liệu theo ngày trong tháng, dùng cho 4 biểu đồ
+  const dayProdChart = daySummary.map(d => ({ day: d.ngay, value: Number(d.lo_cho_luy_ke) || 0 }));
+  const dayDaoLoChart = daySummary.map(d => ({ day: d.ngay, value: Number(d.dao_lo_luy_ke) || 0 }));
+  const dayXenLoChart = daySummary.map(d => ({ day: d.ngay, value: Number(d.xen_lo_luy_ke) || 0 }));
+  const dayChongDoiChart = daySummary.map(d => ({ day: d.ngay, value: Number(d.chong_doi_luy_ke) || 0 }));
 
   // Chế độ "Theo tháng": hiện chỉ có 1 tháng đang chọn (chưa có truy vấn xu hướng nhiều tháng),
   // nên tạm hiển thị đúng 1 cột bằng dữ liệu lũy kế của tháng đó.
   const monthProdChart = monthSummary
-    ? [{ day: `Th${monthSummary.thang}`, value: Number(monthSummary.san_luong_luy_ke) || 0 }]
+    ? [{ day: `Th${monthSummary.thang}`, value: Number(monthSummary.lo_cho_luy_ke) || 0 }]
     : [];
-  const monthProgChart = monthSummary
-    ? [{ day: `Th${monthSummary.thang}`, value: Number(monthSummary.tien_do_luy_ke) || 0 }]
+  const monthDaoLoChart = monthSummary
+    ? [{ day: `Th${monthSummary.thang}`, value: Number(monthSummary.dao_lo_luy_ke) || 0 }]
+    : [];
+  const monthXenLoChart = monthSummary
+    ? [{ day: `Th${monthSummary.thang}`, value: Number(monthSummary.xen_lo_luy_ke) || 0 }]
+    : [];
+  const monthChongDoiChart = monthSummary
+    ? [{ day: `Th${monthSummary.thang}`, value: Number(monthSummary.chong_doi_luy_ke) || 0 }]
     : [];
 
-  const prodData = chartView === "month" ? monthProdChart : dayProdChart;
-  const progData = chartView === "month" ? monthProgChart : dayProgChart;
+  // Get chart data based on selected type and view mode
+  const getChartData = (type: LoaiCongViec) => {
+    switch (type) {
+      case "lo_cho":
+        return chartView === "month" ? monthProdChart : dayProdChart;
+      case "dao_lo":
+        return chartView === "month" ? monthDaoLoChart : dayDaoLoChart;
+      case "xen_lo":
+        return chartView === "month" ? monthXenLoChart : dayXenLoChart;
+      case "chong_doi":
+        return chartView === "month" ? monthChongDoiChart : dayChongDoiChart;
+    }
+  };
 
 
   // Lấy lũy kế theo từng loại từ data API mới (4 loại)
@@ -1836,7 +1883,7 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
     { type: "chong_doi", gradient: ["#7C2D12", "#EA580C"], unit: "mét" },
   ];
   // Lấy lũy kế tháng hiện tại (cumulative từ ngày đầu tháng tới ngày chọn)
-  const lastDayRow = dayData.length > 0 ? dayData[dayData.length - 1] : null;
+  const lastDayRow = daySummary.length > 0 ? daySummary[daySummary.length - 1] : null;
   // Build per-type giá trị theo viewMode
   // month view → lấy từ kpi (year cumulative)
   // day view → lấy từ lastDayRow (month cumulative)
@@ -1852,6 +1899,10 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
   const remainingDays = chartView === "month" ? remainingDaysYear : remainingDaysMonth;
   const periodLabel = chartView === "month" ? "năm" : "tháng";
 
+  // Default chart data for width calculation (using sản lượng as default)
+  const defaultChartData = getChartData("lo_cho");
+  const progChartData = getChartData("dao_lo");
+
   // Chỉ hiển đúng 7 cột/điểm trong khung nhìn, phần còn lại cuộn ngang để xem tiếp.
   // Đo chiều rộng thực tế của từng khung để chia đều cho đúng số cột/điểm muốn hiển thị,
   // bất kể khung rộng/hẹp thế nào tuỳ theo layout thực tế trên máy người dùng.
@@ -1860,10 +1911,10 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
   const [progBoxRef, progBoxWidth] = useContainerWidth<HTMLDivElement>();
   const prodItemWidth = Math.max(50, prodBoxWidth / VISIBLE_ITEMS);
   const progItemWidth = Math.max(50, progBoxWidth / VISIBLE_ITEMS);
-  const prodChartWidth = Math.max(prodBoxWidth, prodData.length * prodItemWidth);
-  const progChartWidth = Math.max(progBoxWidth, progData.length * progItemWidth);
-  const canScrollProd = prodData.length > VISIBLE_ITEMS;
-  const canScrollProg = progData.length > VISIBLE_ITEMS;
+  const prodChartWidth = Math.max(prodBoxWidth, defaultChartData.length * prodItemWidth);
+  const progChartWidth = Math.max(progBoxWidth, progChartData.length * progItemWidth);
+  const canScrollProd = defaultChartData.length > VISIBLE_ITEMS;
+  const canScrollProg = progChartData.length > VISIBLE_ITEMS;
 
   // Tổng hợp dữ liệu đường lò: lấy dòng cumulative cuối cùng của mỗi tunnel
   type TunnelAgg = { id: string; name: string; san_luong: number; tien_do: number; lastReport: string };
@@ -1970,13 +2021,13 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
           return (
             <div
               key={type}
-              onClick={() => setChartModalOpen(type as "prod" | "prog")}
+              onClick={() => setChartModalOpen(type)}
               className="rounded-2xl overflow-hidden shadow-lg p-6 flex flex-col cursor-pointer hover:shadow-2xl transition-shadow"
               style={{ background: `linear-gradient(135deg,${gradient[0]},${gradient[1]})`, boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}
               title={`Click để xem biểu đồ ${loaiLabelMap[type]} chi tiết`}
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setChartModalOpen(type as "prod" | "prog"); }}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setChartModalOpen(type); }}
             >
           <div className="flex justify-between items-start w-full mb-2 gap-2">
             <div>
@@ -2206,21 +2257,26 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
         )}
       </div>
 
-      {/* ─── Modal biểu đồ (khi click vào số liệu chính ở 2 thẻ KPI) ────── */}
+      {/* ─── Modal biểu đồ (khi click vào số liệu chính ở 4 thẻ KPI) ────── */}
       {chartModalOpen && (
         <div
           className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={() => setChartModalOpen(null)}
         >
-          <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-auto"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-5 border-b border-gray-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+            {/* Modal Header - FIXED, outside scroll area */}
+            <div className="flex items-center justify-between p-5 border-b border-gray-200 flex-shrink-0 sticky top-0 z-10 bg-white rounded-t-2xl">
               <div>
                 <h2 className="font-bold text-gray-900 text-lg" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                  {chartModalOpen === "prod" ? "Biểu đồ sản lượng (lũy kế)" : "Biểu đồ tiến độ đào lò (lũy kế)"}
+                  {(() => {
+                    const labels: Record<string, string> = {
+                      lo_cho: "Biểu đồ sản lượng (lũy kế)",
+                      dao_lo: "Biểu đồ đào lò (lũy kế)",
+                      xen_lo: "Biểu đồ xén lò (lũy kế)",
+                      chong_doi: "Biểu đồ chống đội (lũy kế)",
+                    };
+                    return labels[chartModalOpen] || "Biểu đồ";
+                  })()}
                 </h2>
                 <p className="text-[11px] text-gray-500 mt-0.5">
                   {chartView === "month" ? "Theo tháng trong năm" : "Theo ngày trong tháng"} · {chartView === "month" ? `Năm ${selectedYear}` : `Tháng ${selectedMonth}/${selectedYear}`}
@@ -2228,60 +2284,69 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
               </div>
               <button
                 onClick={() => setChartModalOpen(null)}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors flex-shrink-0"
                 title="Đóng"
               >
                 <X size={20} />
               </button>
             </div>
 
-            {/* Modal Body - Chart */}
-            <div className="p-5">
-              {chartModalOpen === "prod" ? (
-                <BarChart width={prodChartWidth} height={380} data={prodData} margin={{ top: 30, right: 20, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                  <XAxis dataKey="day" tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} dy={5} />
-                  <YAxis tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-                  <Tooltip cursor={{ fill: "rgba(37,99,235,0.04)" }} />
-                  <Bar
-                    dataKey="value"
-                    fill="#2563EB"
-                    radius={[4, 4, 0, 0]}
-                    barSize={Math.min(48, prodItemWidth * 0.45)}
-                    label={(props: any) => {
-                      const { x = 0, y = 0, width = 0, value = 0 } = props;
-                      return (
-                        <text x={Number(x) + Number(width) / 2} y={Number(y) - 10} fill="#2563EB" textAnchor="middle" fontSize={12} fontWeight="700">
-                          {Math.round(Number(value)).toLocaleString("vi-VN")}
-                        </text>
-                      );
-                    }}
-                  />
-                </BarChart>
-              ) : (
-                <AreaChart width={progChartWidth} height={380} data={progData} margin={{ top: 30, right: 25, left: 25, bottom: 5 }}>
-                  <defs>
-                    <linearGradient id="colorProgressModal" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#F97316" stopOpacity={0.15} />
-                      <stop offset="95%" stopColor="#FFF7ED" stopOpacity={0.01} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                  <XAxis dataKey="day" tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} dy={5} />
-                  <YAxis tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-                  <Tooltip />
-                  <Area
-                    type="linear"
-                    dataKey="value"
-                    stroke="#EA580C"
-                    strokeWidth={2.5}
-                    fillOpacity={1}
-                    fill="url(#colorProgressModal)"
-                    dot={{ fill: "#EA580C", r: 4, strokeWidth: 2, stroke: "#fff" }}
-                    activeDot={{ r: 5, fill: "#EA580C", strokeWidth: 0 }}
-                  />
-                </AreaChart>
-              )}
+            {/* Modal Body - Chart (scrollable horizontally) */}
+            <div className="p-5 overflow-x-auto overflow-y-hidden">
+              {(() => {
+                const chartData = getChartData(chartModalOpen);
+                const typeConfig: Record<string, { color: string; gradientId: string; isBar: boolean }> = {
+                  lo_cho: { color: "#2563EB", gradientId: "colorProdModal", isBar: true },
+                  dao_lo: { color: "#EA580C", gradientId: "colorDaoLoModal", isBar: false },
+                  xen_lo: { color: "#10B981", gradientId: "colorXenLoModal", isBar: false },
+                  chong_doi: { color: "#EA580C", gradientId: "colorChongDoiModal", isBar: false },
+                };
+                const cfg = typeConfig[chartModalOpen] || typeConfig.lo_cho;
+                const chartWidth = chartModalOpen === "lo_cho" ? prodChartWidth : progChartWidth;
+                const itemWidth = chartModalOpen === "lo_cho" ? prodItemWidth : progItemWidth;
+
+                if (cfg.isBar) {
+                  return (
+                    <BarChart width={chartWidth} height={380} data={chartData} margin={{ top: 30, right: 20, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                      <XAxis dataKey="day" tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} dy={5} />
+                      <YAxis tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                      <Tooltip cursor={{ fill: "rgba(37,99,235,0.04)" }} />
+                      <Bar
+                        dataKey="value"
+                        fill={cfg.color}
+                        radius={[4, 4, 0, 0]}
+                        barSize={Math.min(48, itemWidth * 0.45)}
+                        label={(props: any) => {
+                          const { x = 0, y = 0, width = 0, value = 0 } = props;
+                          return (
+                            <text x={Number(x) + Number(width) / 2} y={Number(y) - 10} fill={cfg.color} textAnchor="middle" fontSize={12} fontWeight="700">
+                              {Math.round(Number(value)).toLocaleString("vi-VN")}
+                            </text>
+                          );
+                        }}
+                      />
+                    </BarChart>
+                  );
+                } else {
+                  return (
+                    <LineChart width={chartWidth} height={380} data={chartData} margin={{ top: 30, right: 25, left: 25, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                      <XAxis dataKey="day" tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} dy={5} />
+                      <YAxis tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                      <Tooltip />
+                      <Line
+                        type="linear"
+                        dataKey="value"
+                        stroke={cfg.color}
+                        strokeWidth={2.5}
+                        dot={{ fill: cfg.color, r: 4, strokeWidth: 2, stroke: "#fff" }}
+                        activeDot={{ r: 5, fill: cfg.color, strokeWidth: 0 }}
+                      />
+                    </LineChart>
+                  );
+                }
+              })()}
             </div>
           </div>
         </div>

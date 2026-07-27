@@ -71,29 +71,44 @@ const C = {
   textLight:     "#94A3B8",
 };
 
-// ─── Các kiểu dữ liệu (đồng bộ với Desktop) ──────────────────────────────────
+// ─── Các kiểu dữ liệu (đồng bộ với Desktop, theo schema 3 bảng mới) ──────────
 type MonthSummary = {
-  thang: string;
-  tong_san_luong: string;
-  tong_tien_do: string;
-  san_luong_luy_ke: string;
-  tien_do_luy_ke: string;
+  thang: string | number;
+  lo_cho_luy_ke: string | number;
+  dao_lo_luy_ke: string | number;
+  xen_lo_luy_ke: string | number;
+  chong_doi_luy_ke: string | number;
 };
 type DaySummary = {
   ngay: string;
-  san_luong_ngay: string;
-  tien_do_ngay: string;
-  san_luong_luy_ke: string;
-  tien_do_luy_ke: string;
+  lo_cho_luy_ke: string | number;
+  dao_lo_luy_ke: string | number;
+  xen_lo_luy_ke: string | number;
+  chong_doi_luy_ke: string | number;
 };
+type KpiLoaiItem = { thuc_te: number; ke_hoach_nam: number; ty_le: number };
 type KpiSummary = {
-  san_luong_thuc_te: number;
-  san_luong_ke_hoach: number;
-  san_luong_ty_le: number;
-  tien_do_thuc_te: number;
-  tien_do_ke_hoach: number;
-  tien_do_ty_le: number;
+  lo_cho: KpiLoaiItem;
+  dao_lo: KpiLoaiItem;
+  xen_lo: KpiLoaiItem;
+  chong_doi: KpiLoaiItem;
 };
+
+// 4 loại chỉ số KPI — render 4 thẻ gradient, xếp dọc full-width (mobile)
+const MOBILE_LOAI_LIST: {
+  type: "lo_cho" | "dao_lo" | "xen_lo" | "chong_doi";
+  label: string;
+  gradient: [string, string];
+  accentBg: string;
+  shadowRgba: string;
+  unit: string;
+  modalKey: "prod" | "prog";
+}[] = [
+  { type: "lo_cho",    label: "Sản lượng lũy kế",    gradient: ["#1E40AF", "#2563EB"], accentBg: "bg-blue-200",   shadowRgba: "rgba(37,99,235,0.3)",  unit: "tấn", modalKey: "prod" },
+  { type: "dao_lo",    label: "Tiến độ đào lò lũy kế", gradient: ["#92400E", "#D97706"], accentBg: "bg-amber-200",  shadowRgba: "rgba(217,119,6,0.3)", unit: "mét", modalKey: "prog" },
+  { type: "xen_lo",    label: "Xén lò lũy kế",        gradient: ["#065F46", "#10B981"], accentBg: "bg-emerald-200", shadowRgba: "rgba(16,185,129,0.3)", unit: "mét", modalKey: "prog" },
+  { type: "chong_doi", label: "Chống đội lũy kế",     gradient: ["#7C2D12", "#EA580C"], accentBg: "bg-orange-200",  shadowRgba: "rgba(234,88,12,0.3)",  unit: "mét", modalKey: "prog" },
+];
 type TunnelData = {
   duong_lo: string;
   ngay_bao_cao: string;
@@ -527,12 +542,33 @@ function MobileOverview({
     return () => { cancelled = true; };
   }, [month, year, refreshTick, viewMode]);
 
-  const kpiSanLuong = kpi?.san_luong_thuc_te ?? (monthSummary ? Number(monthSummary.san_luong_luy_ke) || 0 : 0);
-  const kpiSLKH = kpi?.san_luong_ke_hoach ?? 0;
-  const kpiSLPct = kpi?.san_luong_ty_le ?? 0;
-  const kpiTienDo = kpi?.tien_do_thuc_te ?? (monthSummary ? Number(monthSummary.tien_do_luy_ke) || 0 : 0);
-  const kpiTDKH = kpi?.tien_do_ke_hoach ?? 0;
-  const kpiTDPct = kpi?.tien_do_ty_le ?? 0;
+  // Sản lượng (lo_cho): thực tế theo viewMode (năm/tháng) + KH năm + % hoàn thành
+  const kpiSLYear = (kpi as any)?.lo_cho?.thuc_te ?? 0;
+  const kpiSLMonth = monthSummary ? Number(monthSummary.lo_cho_luy_ke) || 0 : 0;
+  const kpiSanLuong = kpiSLYear > 0 ? kpiSLYear : kpiSLMonth;
+  const kpiSLKH = (kpi as any)?.lo_cho?.ke_hoach_nam ?? 0;
+  const kpiSLPct = (kpi as any)?.lo_cho?.ty_le ?? 0;
+
+  // Tiến độ đào lò (dao_lo): thực tế theo viewMode (năm/tháng) + KH năm + % hoàn thành
+  const kpiTDYear = (kpi as any)?.dao_lo?.thuc_te ?? 0;
+  const kpiTDMonth = monthSummary ? Number(monthSummary.dao_lo_luy_ke) || 0 : 0;
+  const kpiTienDo = kpiTDYear > 0 ? kpiTDYear : kpiTDMonth;
+  const kpiTDKH = (kpi as any)?.dao_lo?.ke_hoach_nam ?? 0;
+  const kpiTDPct = (kpi as any)?.dao_lo?.ty_le ?? 0;
+
+  // Xén lò (xen_lo)
+  const kpiXLYear = (kpi as any)?.xen_lo?.thuc_te ?? 0;
+  const kpiXLMonth = monthSummary ? Number(monthSummary.xen_lo_luy_ke) || 0 : 0;
+  const kpiXenLo = kpiXLYear > 0 ? kpiXLYear : kpiXLMonth;
+  const kpiXLKH = (kpi as any)?.xen_lo?.ke_hoach_nam ?? 0;
+  const kpiXLPct = (kpi as any)?.xen_lo?.ty_le ?? 0;
+
+  // Chống đội (chong_doi)
+  const kpiCDYear = (kpi as any)?.chong_doi?.thuc_te ?? 0;
+  const kpiCDMonth = monthSummary ? Number(monthSummary.chong_doi_luy_ke) || 0 : 0;
+  const kpiChongDoi = kpiCDYear > 0 ? kpiCDYear : kpiCDMonth;
+  const kpiCDKH = (kpi as any)?.chong_doi?.ke_hoach_nam ?? 0;
+  const kpiCDPct = (kpi as any)?.chong_doi?.ty_le ?? 0;
 
   // ── Tính "còn lại" và "trung bình cần/ngày" để đạt kế hoạch (tháng hoặc năm tuỳ viewMode) ──
   const today = new Date();
@@ -557,11 +593,15 @@ function MobileOverview({
       : 0;
 
   // monthSL/TD = lũy kế tháng hiện tại (từ API monthSummary)
-  const monthSL = monthSummary ? Number(monthSummary.san_luong_luy_ke) || 0 : 0;
-  const monthTD = monthSummary ? Number(monthSummary.tien_do_luy_ke) || 0 : 0;
+  const monthSL = monthSummary ? Number(monthSummary.lo_cho_luy_ke) || 0 : 0;
+  const monthTD = monthSummary ? Number(monthSummary.dao_lo_luy_ke) || 0 : 0;
+  const monthXL = monthSummary ? Number(monthSummary.xen_lo_luy_ke) || 0 : 0;
+  const monthCD = monthSummary ? Number(monthSummary.chong_doi_luy_ke) || 0 : 0;
   // Kế hoạch tháng = kế hoạch năm / 12
   const keHoachThangSL = kpiSLKH / 12;
   const keHoachThangTD = kpiTDKH / 12;
+  const keHoachThangXL = kpiXLKH / 12;
+  const keHoachThangCD = kpiCDKH / 12;
 
   const remainingDaysPeriod = viewMode === "month" ? remainingDaysYear : remainingDaysMonth;
   // viewMode = "month" (năm): Còn lại = KH năm - lũy kế năm
@@ -572,16 +612,24 @@ function MobileOverview({
   const conLaiTienDo = viewMode === "month"
     ? Math.max(kpiTDKH - kpiTienDo, 0)
     : Math.max(keHoachThangTD - monthTD, 0);
+  const conLaiXenLo = viewMode === "month"
+    ? Math.max(kpiXLKH - kpiXenLo, 0)
+    : Math.max(keHoachThangXL - monthXL, 0);
+  const conLaiChongDoi = viewMode === "month"
+    ? Math.max(kpiCDKH - kpiChongDoi, 0)
+    : Math.max(keHoachThangCD - monthCD, 0);
   const tbSanLuongNgay = remainingDaysPeriod > 0 ? conLaiSanLuong / remainingDaysPeriod : 0;
   const tbTienDoNgay = remainingDaysPeriod > 0 ? conLaiTienDo / remainingDaysPeriod : 0;
+  const tbXenLoNgay = remainingDaysPeriod > 0 ? conLaiXenLo / remainingDaysPeriod : 0;
+  const tbChongDoiNgay = remainingDaysPeriod > 0 ? conLaiChongDoi / remainingDaysPeriod : 0;
 
-  // Dữ liệu 2 biểu đồ: thay đổi nguồn theo viewMode
+  // Dữ liệu 2 biểu đồ: thay đổi nguồn theo viewMode (mobile giữ chart cho prod/prog)
   const chartProd = viewMode === "month"
-    ? monthList.map(m => ({ day: `T${m.thang}`, value: Number(m.san_luong_luy_ke) || 0 }))
-    : daySummary.map(d => ({ day: d.ngay, value: Number(d.san_luong_luy_ke) || 0 }));
+    ? monthList.map(m => ({ day: `T${m.thang}`, value: Number(m.lo_cho_luy_ke) || 0 }))
+    : daySummary.map(d => ({ day: d.ngay, value: Number(d.lo_cho_luy_ke) || 0 }));
   const chartProg = viewMode === "month"
-    ? monthList.map(m => ({ day: `T${m.thang}`, value: Number(m.tien_do_luy_ke) || 0 }))
-    : daySummary.map(d => ({ day: d.ngay, value: Number(d.tien_do_luy_ke) || 0 }));
+    ? monthList.map(m => ({ day: `T${m.thang}`, value: Number(m.dao_lo_luy_ke) || 0 }))
+    : daySummary.map(d => ({ day: d.ngay, value: Number(d.dao_lo_luy_ke) || 0 }));
 
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const years = [2024, 2025, 2026, 2027];
@@ -654,99 +702,65 @@ function MobileOverview({
             </div>
           )}
 
-          {/* 2 KPI gradient cards - click để xem biểu đồ */}
+          {/* 4 KPI gradient cards - sắp xếp dọc, full-width, click để xem biểu đồ */}
           <div className="flex flex-col gap-3 mb-4">
-            <div
-              onClick={() => setChartModalOpen("prod")}
-              className="rounded-2xl p-4 shadow-lg cursor-pointer active:opacity-90"
-              style={{ background: "linear-gradient(135deg,#1E40AF,#2563EB)", boxShadow: "0 4px 20px rgba(37,99,235,0.3)" }}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setChartModalOpen("prod"); }}
-            >
-              <div className="flex justify-between items-start mb-2 gap-2">
-                <div className="text-[15px] text-white font-semibold leading-tight">Sản lượng lũy kế</div>
-                <div className="bg-white/20 rounded-full px-3 py-1.5 text-[20px] font-bold text-white flex items-center gap-1 flex-shrink-0 leading-none">
-                  <ArrowUpRight size={16} />
-                  {Math.round(kpiSLPct).toLocaleString("vi-VN")}%
-                </div>
-              </div>
-              <div className="font-extrabold text-white text-[42px] leading-none mb-2" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                {Math.round(kpiSanLuong).toLocaleString("vi-VN")}
-                <span className="text-xl font-medium ml-2 opacity-80">
-                  / {Math.round(viewMode === "month" ? kpiSLKH : keHoachThangSL).toLocaleString("vi-VN")} tấn
-                </span>
-              </div>
-              <div className="text-[15px] text-white/85 mb-3 font-medium">
-                Kế hoạch {viewMode === "month" ? "năm" : "tháng"}: <strong className="text-white">
-                  {Math.round(viewMode === "month" ? kpiSLKH : keHoachThangSL).toLocaleString("vi-VN")}
-                </strong> tấn
-              </div>
-              <div className="flex items-stretch gap-3 mb-2.5 bg-black/15 rounded-xl px-3.5 py-3">
-                <div className="flex-1 text-left">
-                  <div className="text-[15px] text-white/85 mb-1.5 font-medium">Còn lại {viewMode === "month" ? "(năm)" : "(tháng)"}</div>
-                  <div className="text-[24px] font-extrabold text-white leading-tight">
-                    {Math.round(conLaiSanLuong).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">tấn</span>
+            {MOBILE_LOAI_LIST.map(({ type, label, gradient, accentBg, shadowRgba, unit, modalKey }) => {
+              const cardData = {
+                lo_cho:    { current: kpiSanLuong, pct: kpiSLPct, khn: kpiSLKH,   conLai: conLaiSanLuong,  tb: tbSanLuongNgay },
+                dao_lo:    { current: kpiTienDo,  pct: kpiTDPct, khn: kpiTDKH,   conLai: conLaiTienDo,    tb: tbTienDoNgay },
+                xen_lo:    { current: kpiXenLo,   pct: kpiXLPct, khn: kpiXLKH,   conLai: conLaiXenLo,     tb: tbXenLoNgay },
+                chong_doi: { current: kpiChongDoi,pct: kpiCDPct, khn: kpiCDKH,   conLai: conLaiChongDoi,  tb: tbChongDoiNgay },
+              }[type];
+              const keHoach = viewMode === "month" ? cardData.khn : cardData.khn / 12;
+              return (
+                <div
+                  key={type}
+                  onClick={() => setChartModalOpen(modalKey)}
+                  className="rounded-2xl p-4 shadow-lg cursor-pointer active:opacity-90"
+                  style={{ background: `linear-gradient(135deg,${gradient[0]},${gradient[1]})`, boxShadow: `0 4px 20px ${shadowRgba}` }}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setChartModalOpen(modalKey); }}
+                >
+                  <div className="flex justify-between items-start mb-2 gap-2">
+                    <div className="text-[15px] text-white font-semibold leading-tight">{label}</div>
+                    <div className="bg-white/20 rounded-full px-3 py-1.5 text-[20px] font-bold text-white flex items-center gap-1 flex-shrink-0 leading-none">
+                      <ArrowUpRight size={16} />
+                      {Math.round(cardData.pct).toLocaleString("vi-VN")}%
+                    </div>
+                  </div>
+                  <div className="font-extrabold text-white text-[42px] leading-none mb-2" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                    {Math.round(cardData.current).toLocaleString("vi-VN")}
+                    <span className="text-xl font-medium ml-2 opacity-80">
+                      / {Math.round(keHoach).toLocaleString("vi-VN")} {unit}
+                    </span>
+                  </div>
+                  <div className="text-[15px] text-white/85 mb-3 font-medium">
+                    Kế hoạch {viewMode === "month" ? "năm" : "tháng"}: <strong className="text-white">
+                      {Math.round(keHoach).toLocaleString("vi-VN")}
+                    </strong> {unit}
+                  </div>
+                  <div className="flex items-stretch gap-3 mb-2.5 bg-black/15 rounded-xl px-3.5 py-3">
+                    <div className="flex-1 text-left">
+                      <div className="text-[15px] text-white/85 mb-1.5 font-medium">Còn lại {viewMode === "month" ? "(năm)" : "(tháng)"}</div>
+                      <div className="text-[24px] font-extrabold text-white leading-tight">
+                        {Math.round(cardData.conLai).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">{unit}</span>
+                      </div>
+                    </div>
+                    <div className="w-px bg-white/25 self-stretch" />
+                    <div className="flex-1 text-left">
+                      <div className="text-[15px] text-white/85 mb-1.5 font-medium">TB cần/ngày ({remainingDaysPeriod} ngày)</div>
+                      <div className="text-[24px] font-extrabold text-white leading-tight">
+                        {Math.round(cardData.tb).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">{unit}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
+                    <div className={`h-full ${accentBg} rounded-full transition-all`} style={{ width: `${Math.min(100, cardData.pct)}%` }} />
                   </div>
                 </div>
-                <div className="w-px bg-white/25 self-stretch" />
-                <div className="flex-1 text-left">
-                  <div className="text-[15px] text-white/85 mb-1.5 font-medium">TB cần/ngày ({remainingDaysPeriod} ngày)</div>
-                  <div className="text-[24px] font-extrabold text-white leading-tight">
-                    {Math.round(tbSanLuongNgay).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">tấn</span>
-                  </div>
-                </div>
-              </div>
-              <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-200 rounded-full transition-all" style={{ width: `${Math.min(100, kpiSLPct)}%` }} />
-              </div>
-            </div>
-
-            <div
-              onClick={() => setChartModalOpen("prog")}
-              className="rounded-2xl p-4 shadow-lg cursor-pointer active:opacity-90"
-              style={{ background: "linear-gradient(135deg,#92400E,#D97706)", boxShadow: "0 4px 20px rgba(217,119,6,0.3)" }}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setChartModalOpen("prog"); }}
-            >
-              <div className="flex justify-between items-start mb-2 gap-2">
-                <div className="text-[15px] text-white font-semibold leading-tight">Tiến độ đào lò lũy kế</div>
-                <div className="bg-white/20 rounded-full px-3 py-1.5 text-[20px] font-bold text-white flex items-center gap-1 flex-shrink-0 leading-none">
-                  <ArrowUpRight size={16} />
-                  {Math.round(kpiTDPct).toLocaleString("vi-VN")}%
-                </div>
-              </div>
-              <div className="font-extrabold text-white text-[42px] leading-none mb-2" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                {Math.round(kpiTienDo).toLocaleString("vi-VN")}
-                <span className="text-xl font-medium ml-2 opacity-80">
-                  / {Math.round(viewMode === "month" ? kpiTDKH : keHoachThangTD).toLocaleString("vi-VN")} mét
-                </span>
-              </div>
-              <div className="text-[15px] text-white/85 mb-3 font-medium">
-                Kế hoạch {viewMode === "month" ? "năm" : "tháng"}: <strong className="text-white">
-                  {Math.round(viewMode === "month" ? kpiTDKH : keHoachThangTD).toLocaleString("vi-VN")}
-                </strong> mét
-              </div>
-              <div className="flex items-stretch gap-3 mb-2.5 bg-black/15 rounded-xl px-3.5 py-3">
-                <div className="flex-1 text-left">
-                  <div className="text-[15px] text-white/85 mb-1.5 font-medium">Còn lại {viewMode === "month" ? "(năm)" : "(tháng)"}</div>
-                  <div className="text-[24px] font-extrabold text-white leading-tight">
-                    {Math.round(conLaiTienDo).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">mét</span>
-                  </div>
-                </div>
-                <div className="w-px bg-white/25 self-stretch" />
-                <div className="flex-1 text-left">
-                  <div className="text-[15px] text-white/85 mb-1.5 font-medium">TB cần/ngày ({remainingDaysPeriod} ngày)</div>
-                  <div className="text-[24px] font-extrabold text-white leading-tight">
-                    {Math.round(tbTienDoNgay).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">mét</span>
-                  </div>
-                </div>
-              </div>
-              <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
-                <div className="h-full bg-amber-200 rounded-full transition-all" style={{ width: `${Math.min(100, kpiTDPct)}%` }} />
-              </div>
-            </div>
+              );
+            })}
           </div>
 
           {/* Bảng chi tiết đường lò - thay thế 2 biểu đồ (click thẻ KPI để xem chart trong modal) */}

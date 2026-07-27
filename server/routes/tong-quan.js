@@ -3,7 +3,6 @@ import pool from "../db.js";
 
 const router = express.Router();
 
-// Kế hoạch năm cho 4 loại chỉ số (đơn vị: tấn cho lo_cho, mét cho các loại khác)
 const KE_HOACH_NAM = {
   lo_cho:   Number(process.env.KE_HOACH_SAN_LUONG) || 1000000,
   dao_lo:   Number(process.env.KE_HOACH_DAO_LO)    || 12000,
@@ -30,14 +29,24 @@ function clampYear(v, fallback) {
   return Math.max(1970, Math.min(9999, n));
 }
 
+async function safeQuery(sql, params, defaultValue) {
+  if (defaultValue === undefined) defaultValue = { rows: [], rowCount: 0 };
+  try {
+    const r = await pool.query(sql, params);
+    return r;
+  } catch (e) {
+    console.warn("Query failed (bảng có thể chưa tồn tại):", e.message);
+    return defaultValue;
+  }
+}
+
 router.get("/tong-quan", async (req, res, next) => {
   try {
     const now = new Date();
     const thang = clampMonth(req.query.thang, now.getMonth() + 1);
     const nam = clampYear(req.query.nam, now.getFullYear());
 
-    // KPI summary: tổng lũy kế theo loại từ đầu năm đến selectedMonth
-    const kpiResult = await pool.query(
+    const kpiResult = await safeQuery(
       `SELECT bch.loai_cong_viec,
               COALESCE(SUM(bch.san_luong), 0)::numeric AS thuc_te
        FROM bao_cao_hang_muc bch
@@ -56,8 +65,7 @@ router.get("/tong-quan", async (req, res, next) => {
       }
     }
 
-    // Monthly chart: tổng theo tháng, pivot thành 4 cột lũy kế
-    const monthResult = await pool.query(
+    const monthResult = await safeQuery(
       `WITH daily_by_type AS (
          SELECT bcct.ngay,
                 bch.loai_cong_viec,
@@ -100,8 +108,7 @@ router.get("/tong-quan", async (req, res, next) => {
       });
     }
 
-    // Daily chart: tổng theo ngày, pivot thành 4 cột lũy kế
-    const dayResult = await pool.query(
+    const dayResult = await safeQuery(
       `WITH daily_by_type AS (
          SELECT bcct.ngay,
                 bch.loai_cong_viec,
@@ -117,7 +124,7 @@ router.get("/tong-quan", async (req, res, next) => {
               SUM(val) AS val
        FROM daily_by_type
        GROUP BY ngay, loai_cong_viec
-       ORDER BY to_date(ngay, 'DD/MM'), loai_cong_viec;`,
+       ORDER BY ngay, loai_cong_viec;`,
       [nam, thang]
     );
 

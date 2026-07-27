@@ -1826,35 +1826,6 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
   const prodData = chartView === "month" ? monthProdChart : dayProdChart;
   const progData = chartView === "month" ? monthProgChart : dayProgChart;
 
-  // Số liệu cho 2 thẻ KPI ở đầu trang — lấy từ truy vấn tháng
-  const kpiSanLuong = kpi ? kpi.san_luong_thuc_te : (monthSummary ? Number(monthSummary.san_luong_luy_ke) || 0 : 0);
-  const kpiSanLuongKeHoach = kpi?.san_luong_ke_hoach ?? 0;
-  const kpiSanLuongTyLe = kpi?.san_luong_ty_le ?? 0;
-  const kpiTienDoThucTe = kpi?.tien_do_thuc_te ?? 0;
-  const kpiTienDoKeHoach = kpi?.tien_do_ke_hoach ?? 0;
-const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
-
-  // ─── Tính "Còn lại" và "TB cần/ngày" theo chartView ─────────────────────────
-  // chartView = "month" → KPI hiển thị lũy kế NĂM → còn lại = kế hoạch năm - lũy kế năm
-  // chartView = "day"   → KPI hiển thị lũy kế THÁNG → còn lại = (kế hoạch tháng - lũy kế tháng)
-  const today = new Date();
-  const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
-  const isLeapYear = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
-  const totalDaysYear = isLeapYear(selectedYear) ? 366 : 365;
-
-  const isCurrentMonth = selectedYear === today.getFullYear() && selectedMonth === today.getMonth() + 1;
-  const isCurrentYear = selectedYear === today.getFullYear();
-  const remainingDaysMonth = isCurrentMonth
-    ? Math.max(daysInMonth - today.getDate(), 0)
-    : (selectedYear > today.getFullYear() || (selectedYear === today.getFullYear() && selectedMonth > today.getMonth() + 1))
-      ? daysInMonth
-      : 0;
-  const dayOfYearToday = Math.floor((today.getTime() - new Date(selectedYear, 0, 1).getTime()) / 86400000) + 1;
-  const remainingDaysYear = isCurrentYear
-    ? Math.max(totalDaysYear - dayOfYearToday, 0)
-    : selectedYear > today.getFullYear()
-      ? totalDaysYear
-      : 0;
 
   // Lấy lũy kế theo từng loại từ data API mới (4 loại)
   type LoaiCongViec = "lo_cho" | "dao_lo" | "xen_lo" | "chong_doi";
@@ -3191,7 +3162,37 @@ function DesktopApp() {
 import MobileApp from "./MobileApp";
 import { useDeviceDetect } from "./hooks/useDeviceDetect";
 
+
+// ─── ErrorBoundary (catch runtime errors, show thay vì trắng màn hình) ──────────────
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("React ErrorBoundary caught:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return React.createElement("div", { className: "p-8 bg-red-50 border border-red-200 rounded-xl m-4" },
+        React.createElement("h2", { className: "text-red-700 text-lg font-bold mb-2" }, "Đã xảy ra lỗi"),
+        React.createElement("pre", { className: "text-red-600 text-xs whitespace-pre-wrap overflow-auto max-h-96" },
+          (this.state.error?.message || "Unknown error") + "\n\n" + (this.state.error?.stack || "")
+        ),
+        React.createElement("button", {
+          className: "mt-4 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold",
+          onClick: () => { this.setState({ hasError: false, error: null }); window.location.reload(); }
+        }, "Tải lại trang")
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const isMobile = useDeviceDetect();
-  return isMobile ? <MobileApp /> : <DesktopApp />;
+  return <ErrorBoundary>{isMobile ? <MobileApp /> : <DesktopApp />}</ErrorBoundary>;
 }

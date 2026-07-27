@@ -4,27 +4,27 @@ import pool from "../db.js";
 const router = express.Router();
 
 // Kế hoạch năm cho 4 loại chỉ số (đơn vị: tấn cho lo_cho, mét cho các loại khác)
-const KE_HOACH_NAM: Record<string, number> = {
+const KE_HOACH_NAM = {
   lo_cho:   Number(process.env.KE_HOACH_SAN_LUONG) || 1000000,
-  dao_lo:   Number(process.env.KE_HOACH_DAO_LO)   || 12000,
-  xen_lo:    Number(process.env.KE_HOACH_XEN_LO)    || 6000,
+  dao_lo:   Number(process.env.KE_HOACH_DAO_LO)    || 12000,
+  xen_lo:    Number(process.env.KE_HOACH_XEN_LO)     || 6000,
   chong_doi: Number(process.env.KE_HOACH_CHONG_DOI) || 6000,
 };
 
-const UNITS: Record<string, string> = {
+const UNITS = {
   lo_cho: "tấn", dao_lo: "mét", xen_lo: "mét", chong_doi: "mét",
 };
 
-const LABELS: Record<string, string> = {
+const LABELS = {
   lo_cho: "Sản lượng", dao_lo: "Đào lò", xen_lo: "Xén lò", chong_doi: "Chống đội",
 };
 
-function clampMonth(v: any, fallback: number): number {
+function clampMonth(v, fallback) {
   const n = parseInt(v, 10);
   if (Number.isNaN(n)) return fallback;
   return Math.max(1, Math.min(12, n));
 }
-function clampYear(v: any, fallback: number): number {
+function clampYear(v, fallback) {
   const n = parseInt(v, 10);
   if (Number.isNaN(n)) return fallback;
   return Math.max(1970, Math.min(9999, n));
@@ -48,7 +48,7 @@ router.get("/tong-quan", async (req, res, next) => {
       [nam, thang]
     );
 
-    const kpiMap: Record<string, number> = { lo_cho: 0, dao_lo: 0, xen_lo: 0, chong_doi: 0 };
+    const kpiMap = { lo_cho: 0, dao_lo: 0, xen_lo: 0, chong_doi: 0 };
     for (const row of kpiResult.rows) {
       const type = row.loai_cong_viec;
       if (type in kpiMap) {
@@ -56,7 +56,7 @@ router.get("/tong-quan", async (req, res, next) => {
       }
     }
 
-    // Monthly chart: lũy kế theo từng tháng trong năm
+    // Monthly chart: tổng theo tháng, pivot thành 4 cột lũy kế
     const monthResult = await pool.query(
       `WITH daily_by_type AS (
          SELECT bcct.ngay,
@@ -77,14 +77,14 @@ router.get("/tong-quan", async (req, res, next) => {
       [nam, thang]
     );
 
-    const monthByType: Record<number, Record<string, number>> = {};
+    const monthByType = {};
     for (const row of monthResult.rows) {
       const t = Number(row.thang);
       if (!monthByType[t]) monthByType[t] = { lo_cho: 0, dao_lo: 0, xen_lo: 0, chong_doi: 0 };
       monthByType[t][row.loai_cong_viec] = Number(row.val) || 0;
     }
-    const monthCum: Record<string, number> = { lo_cho: 0, dao_lo: 0, xen_lo: 0, chong_doi: 0 };
-    const monthArray: any[] = [];
+    const monthCum = { lo_cho: 0, dao_lo: 0, xen_lo: 0, chong_doi: 0 };
+    const monthArray = [];
     const sortedMonths = Object.keys(monthByType).map(Number).sort((a, b) => a - b);
     for (const t of sortedMonths) {
       const data = monthByType[t];
@@ -93,11 +93,14 @@ router.get("/tong-quan", async (req, res, next) => {
       }
       monthArray.push({
         thang: t,
-        ...Object.fromEntries(Object.keys(monthCum).map(k => [k + "_luy_ke", monthCum[k]])),
+        lo_cho_luy_ke: monthCum.lo_cho,
+        dao_lo_luy_ke: monthCum.dao_lo,
+        xen_lo_luy_ke: monthCum.xen_lo,
+        chong_doi_luy_ke: monthCum.chong_doi,
       });
     }
 
-    // Daily chart: lũy kế theo từng ngày trong tháng đang chọn
+    // Daily chart: tổng theo ngày, pivot thành 4 cột lũy kế
     const dayResult = await pool.query(
       `WITH daily_by_type AS (
          SELECT bcct.ngay,
@@ -118,14 +121,14 @@ router.get("/tong-quan", async (req, res, next) => {
       [nam, thang]
     );
 
-    const dayByType: Record<string, Record<string, number>> = {};
+    const dayByType = {};
     for (const row of dayResult.rows) {
       const ngay = row.ngay;
       if (!dayByType[ngay]) dayByType[ngay] = { lo_cho: 0, dao_lo: 0, xen_lo: 0, chong_doi: 0 };
       dayByType[ngay][row.loai_cong_viec] = Number(row.val) || 0;
     }
-    const dayCum: Record<string, number> = { lo_cho: 0, dao_lo: 0, xen_lo: 0, chong_doi: 0 };
-    const dayArray: any[] = [];
+    const dayCum = { lo_cho: 0, dao_lo: 0, xen_lo: 0, chong_doi: 0 };
+    const dayArray = [];
     const sortedDays = Object.keys(dayByType).sort((a, b) => {
       const [da, ma] = a.split("/").map(Number);
       const [db, mb] = b.split("/").map(Number);
@@ -138,11 +141,14 @@ router.get("/tong-quan", async (req, res, next) => {
       }
       dayArray.push({
         ngay,
-        ...Object.fromEntries(Object.keys(dayCum).map(k => [k + "_luy_ke", dayCum[k]])),
+        lo_cho_luy_ke: dayCum.lo_cho,
+        dao_lo_luy_ke: dayCum.dao_lo,
+        xen_lo_luy_ke: dayCum.xen_lo,
+        chong_doi_luy_ke: dayCum.chong_doi,
       });
     }
 
-    const kpiObj: Record<string, any> = {};
+    const kpiObj = {};
     for (const type of Object.keys(KE_HOACH_NAM)) {
       const thuc_te = kpiMap[type] || 0;
       const ke_hoach_nam = KE_HOACH_NAM[type];

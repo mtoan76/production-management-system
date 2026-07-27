@@ -2007,34 +2007,30 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
               tabIndex={0}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setChartModalOpen(type as "prod" | "prog"); }}
             >
-          <div className="flex justify-between items-start w-full mb-2">
+          <div className="flex justify-between items-start w-full mb-2 gap-2">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-400">SẢN LƯỢNG LŨY KẾ</p>
+              <p className="text-[13px] text-white/75 font-semibold leading-tight">{loaiLabelMap[type]} lũy kế</p>
               <p className="text-[11px] text-white/60 mt-0.5">
                 {loadingOverview ? "Đang tải..." : chartView === "month" ? `Năm ${selectedYear}` : `Tháng ${selectedMonth}/${selectedYear}`}
               </p>
               <div className="mt-3">
-                <span
-                  className="text-[36px] font-black text-white tracking-tight leading-none"
-                >
-                  {Math.round(kpiSanLuong).toLocaleString("vi-VN")}
+                <span className="text-[36px] font-black text-white tracking-tight leading-none">
+                  {Math.round(val.current).toLocaleString("vi-VN")}
                 </span>
                 <span className="text-white/85 text-sm font-medium ml-1">
-                  / {Math.round(chartView === "month" ? kpiSanLuongKeHoach : keHoachThangSL).toLocaleString("vi-VN")} tấn
+                  / {Math.round(keHoach).toLocaleString("vi-VN")} {unit}
                 </span>
               </div>
               <p className="text-[11px] text-white/85 mt-1.5">
                 Kế hoạch {chartView === "month" ? "năm" : "tháng"}: <strong className="text-white">
-                  {chartView === "month"
-                    ? Math.round(kpiSanLuongKeHoach).toLocaleString("vi-VN")
-                    : Math.round(keHoachThangSL).toLocaleString("vi-VN")}
-                </strong> tấn
+                  {Math.round(keHoach).toLocaleString("vi-VN")}
+                </strong> {unit}
               </p>
             </div>
 
             <div className="bg-white/20 rounded-full px-3 py-1.5 text-[18px] font-bold text-white flex items-center gap-1 flex-shrink-0 leading-none">
               <ArrowUpRight size={16} />
-              {Math.round(kpiSanLuongTyLe).toLocaleString("vi-VN")}%
+              {phanTram.toLocaleString("vi-VN")}%
             </div>
           </div>
 
@@ -2043,18 +2039,18 @@ const kpiTienDoTyLe = kpi?.tien_do_ty_le ?? 0;
             <div className="text-left">
               <div className="text-[13px] text-white/85 mb-1 font-medium">Còn lại ({periodLabel})</div>
               <div className="text-[22px] font-extrabold text-white leading-tight">
-                {Math.round(conLaiSL).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">tấn</span>
+                {Math.round(conLai).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">{unit}</span>
               </div>
             </div>
             <div className="text-left">
               <div className="text-[13px] text-white/85 mb-1 font-medium">TB cần/ngày ({remainingDays} ngày)</div>
               <div className="text-[22px] font-extrabold text-white leading-tight">
-                {Math.round(tbSLNgay).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">tấn</span>
+                {Math.round(tbNgay).toLocaleString("vi-VN")} <span className="text-sm font-medium opacity-80">{unit}</span>
               </div>
             </div>
           </div>
-        </div>
 
+        </div>
           );
         })}
       </div>

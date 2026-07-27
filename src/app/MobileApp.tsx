@@ -29,6 +29,8 @@ const N8N_BAO_CAO_DETAIL_URL =
   (import.meta as any)?.env?.VITE_N8N_BAO_CAO_DETAIL_URL || "/api/bao-cao";
 const N8N_CANH_BAO_LIST_URL =
   (import.meta as any)?.env?.VITE_N8N_CANH_BAO_LIST_URL || "/api/canh-bao";
+const N8N_CONG_TRUONG_URL =
+  (import.meta as any)?.env?.VITE_N8N_CONG_TRUONG_URL || "/api/cong-truong";
 
 // ─── VN date parser (API trả "DD/MM/YYYY HH:MM:SS" - JS Date() không parse được) ──
 function parseVNDate(s: string | null | undefined): Date | null {
@@ -51,6 +53,17 @@ type MobileOverviewCache = {
   tunnelRows: any[];
 };
 const mobileOverviewCache: Map<string, MobileOverviewCache> = new Map();
+
+// ─── Module-level cache cho Công trường data (mobile) ────────────────────────
+type MobileCongTruongCache = {
+  thang: number;
+  nam: number;
+  remainingDays: number;
+  keHoachThang: { lo_cho: number; dao_lo: number; xen_lo: number; chong_doi: number };
+  khaiThac: any[];
+  daoLo: any[];
+};
+const mobileCongTruongCache: Map<string, MobileCongTruongCache> = new Map();
 
 // ─── Bảng màu dùng chung cho giao diện mobile ────────────────────────────────
 const C = {
@@ -473,6 +486,8 @@ function MobileOverview({
   // State cho chart modal + dữ liệu đường lò
   const [chartModalOpen, setChartModalOpen] = useState<null | "prod" | "prog">(null);
   const [tunnelRows, setTunnelRows] = useState<any[]>([]);
+  // State cho modal công trường
+  const [congTruongModalOpen, setCongTruongModalOpen] = useState<null | { site: any; type: "khai_thac" | "dao_lo" }>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -541,6 +556,50 @@ function MobileOverview({
     load();
     return () => { cancelled = true; };
   }, [month, year, refreshTick, viewMode]);
+
+  // ─── Fetch Công trường data (caching như overview) ───────────────────────────
+  const [congTruongData, setCongTruongData] = useState<MobileCongTruongCache | null>(null);
+  const [loadingCongTruong, setLoadingCongTruong] = useState(true);
+  const [congTruongError, setCongTruongError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const key = `${year}-${month}`;
+
+    if (mobileCongTruongCache.has(key) && refreshTick === 0) {
+      const cached = mobileCongTruongCache.get(key)!;
+      setCongTruongData(cached);
+      setLoadingCongTruong(false);
+      return;
+    }
+
+    async function load() {
+      setLoadingCongTruong(true);
+      setCongTruongError("");
+      try {
+        const res = await fetch(`${N8N_CONG_TRUONG_URL}?thang=${month}&nam=${year}`);
+        if (!res.ok) throw new Error("Lỗi tải công trường");
+        const data = await res.json();
+        if (cancelled) return;
+        const newData: MobileCongTruongCache = {
+          thang: data.thang,
+          nam: data.nam,
+          remainingDays: data.remainingDays,
+          keHoachThang: data.keHoachThang,
+          khaiThac: data.khaiThac || [],
+          daoLo: data.daoLo || [],
+        };
+        mobileCongTruongCache.set(key, newData);
+        setCongTruongData(newData);
+      } catch (err: any) {
+        if (!cancelled) setCongTruongError(err?.message || "Không tải được dữ liệu công trường");
+      } finally {
+        if (!cancelled) setLoadingCongTruong(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [month, year, refreshTick]);
 
   // Sản lượng (lo_cho): thực tế theo viewMode (năm/tháng) + KH năm + % hoàn thành
   const kpiSLYear = (kpi as any)?.lo_cho?.thuc_te ?? 0;
@@ -633,6 +692,25 @@ function MobileOverview({
 
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const years = [2024, 2025, 2026, 2027];
+
+  // Rút gọn tên công trường (đồng bộ với Desktop):
+  //  - "CT Khai thác 1"     -> "1"
+  //  - "Cơ giới hóa 1"      -> "Cơ giới hóa 1"  (giữ nguyên để tránh trùng với CT Khai thác 1)
+  //  - "CT Đào lò 1"        -> "Đào lò 1"
+  function simplifySiteName(name: string) {
+    if (!name) return name;
+    if (/^Cơ giới hóa\b/i.test(name)) return name;
+    const daoLoMatch = name.match(/^CT\s+Đào lò\s+(\d+)$/i);
+    if (daoLoMatch) return `Đào lò ${daoLoMatch[1]}`;
+    const khaiThacMatch = name.match(/(\d+)$/);
+    if (khaiThacMatch) return khaiThacMatch[1];
+    return name;
+  }
+
+  const khaiThacSites = (congTruongData?.khaiThac || []).map(s => ({ ...s, tenCongTruong: simplifySiteName(s.tenCongTruong) }));
+  const daoLoSites = (congTruongData?.daoLo || []).map(s => ({ ...s, tenCongTruong: simplifySiteName(s.tenCongTruong) }));
+  const remainingDays = congTruongData?.remainingDays ?? 0;
+  const keHoachThang = congTruongData?.keHoachThang || { lo_cho: 0, dao_lo: 0, xen_lo: 0, chong_doi: 0 };
   const chartBadge = viewMode === "month" ? `Năm ${year}` : `Tháng ${month}`;
 
   return (
@@ -723,22 +801,17 @@ function MobileOverview({
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setChartModalOpen(modalKey); }}
                 >
                   <div className="flex justify-between items-start mb-2 gap-2">
-                    <div className="text-[15px] text-white font-semibold leading-tight">{label}</div>
+                    <div className="text-[16px] text-white font-bold leading-tight">{label}</div>
                     <div className="bg-white/20 rounded-full px-3 py-1.5 text-[20px] font-bold text-white flex items-center gap-1 flex-shrink-0 leading-none">
                       <ArrowUpRight size={16} />
                       {Math.round(cardData.pct).toLocaleString("vi-VN")}%
                     </div>
                   </div>
-                  <div className="font-extrabold text-white text-[42px] leading-none mb-2" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                  <div className="font-extrabold text-white text-[44px] leading-none mb-2" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
                     {Math.round(cardData.current).toLocaleString("vi-VN")}
-                    <span className="text-xl font-medium ml-2 opacity-80">
+                    <span className="text-xl font-medium ml-2 opacity-90">
                       / {Math.round(keHoach).toLocaleString("vi-VN")} {unit}
                     </span>
-                  </div>
-                  <div className="text-[15px] text-white/85 mb-3 font-medium">
-                    Kế hoạch {viewMode === "month" ? "năm" : "tháng"}: <strong className="text-white">
-                      {Math.round(keHoach).toLocaleString("vi-VN")}
-                    </strong> {unit}
                   </div>
                   <div className="flex items-stretch gap-3 mb-2.5 bg-black/15 rounded-xl px-3.5 py-3">
                     <div className="flex-1 text-left">
@@ -763,102 +836,108 @@ function MobileOverview({
             })}
           </div>
 
-          {/* Bảng chi tiết đường lò - thay thế 2 biểu đồ (click thẻ KPI để xem chart trong modal) */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm mb-3">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <div className="font-bold text-slate-800 text-[14px]" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Chi tiết theo từng đường lò</div>
-                <div className="text-[10px] text-slate-500">Lũy kế tháng {month}/{year} · Click thẻ KPI để xem biểu đồ</div>
+          {/* ─── Bảng 1: Công trường Khai thác ────────────────────────────────────── */}
+          {(khaiThacSites.length || 0) > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm mb-3">
+              <div className="flex items-center gap-3 mb-3 px-4 py-3 bg-orange-50 border-l-4 border-orange-500 rounded-r-lg">
+                <Package size={20} className="text-orange-600" />
+                <div className="text-xl font-bold text-slate-900">Công trường Khai thác</div>
               </div>
-              <span className="bg-blue-50 text-blue-700 text-[10px] font-bold rounded-md px-2 py-0.5">T{month}</span>
+              <div className="text-[10px] text-slate-500 mb-2">Lũy kế tháng {month}/{year} · Click công trường để xem chi tiết</div>
+              {loadingCongTruong ? (
+                <div className="text-center text-xs text-slate-400 py-6">Đang tải dữ liệu công trường…</div>
+              ) : (
+                <div className="overflow-x-auto scrollbar-hide -mx-4">
+                  <table className="w-full text-[12px] border-collapse table-fixed">
+                    <colgroup>
+                      <col style={{ width: "120px" }} />
+                      <col style={{ width: "90px" }} />
+                      <col style={{ width: "85px" }} />
+                      <col style={{ width: "75px" }} />
+                      <col style={{ width: "85px" }} />
+                      <col style={{ width: "120px" }} />
+                    </colgroup>
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th className="px-2 py-2 text-left font-semibold text-slate-600 text-[10px] uppercase tracking-wide">Công trường</th>
+                        <th className="px-2 py-2 text-right font-semibold text-slate-600 text-[10px] uppercase tracking-wide">Tấn than</th>
+                        <th className="px-2 py-2 text-right font-semibold text-slate-600 text-[10px] uppercase tracking-wide">Mét lò đào</th>
+                        <th className="px-2 py-2 text-right font-semibold text-slate-600 text-[10px] uppercase tracking-wide">Mét xén</th>
+                        <th className="px-2 py-2 text-right font-semibold text-slate-600 text-[10px] uppercase tracking-wide">Mét chống đội</th>
+                        <th className="px-2 py-2 text-left font-semibold text-slate-600 text-[10px] uppercase tracking-wide">Cập nhật</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {khaiThacSites.map(site => (
+                        <tr
+                          key={site.tenCongTruong}
+                          onClick={() => setCongTruongModalOpen({ site, type: "khai_thac" })}
+                          className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors cursor-pointer"
+                        >
+                          <td className="px-2 py-2 font-semibold text-slate-900 whitespace-nowrap">{site.tenCongTruong}</td>
+                          <td className="px-2 py-2 text-right font-bold text-blue-700 tabular-nums">{Math.round(site.lo_cho).toLocaleString("vi-VN")}</td>
+                          <td className="px-2 py-2 text-right font-bold text-orange-600 tabular-nums">{Math.round(site.dao_lo).toLocaleString("vi-VN")}</td>
+                          <td className="px-2 py-2 text-right font-bold text-green-600 tabular-nums">{Math.round(site.xen_lo).toLocaleString("vi-VN")}</td>
+                          <td className="px-2 py-2 text-right font-bold text-red-600 tabular-nums">{Math.round(site.chong_doi).toLocaleString("vi-VN")}</td>
+                          <td className="px-2 py-2 text-[10px] text-slate-500 whitespace-nowrap">{site.thoiGianBaoCao}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-            {loading && tunnelRows.length === 0 ? (
-              <div className="text-center text-xs text-slate-400 py-6">Đang tải dữ liệu đường lò…</div>
-            ) : (() => {
-                // Tổng hợp lấy dòng cumulative cuối cùng của mỗi tunnel
-                const tunnelMap = new Map<string, any>();
-                for (const r of tunnelRows) {
-                  const existing = tunnelMap.get(r.duong_lo);
-                  if (!existing || (r.thoi_gian_bao_cao || "") > (existing.thoi_gian_bao_cao || "")) {
-                    tunnelMap.set(r.duong_lo, r);
-                  }
-                }
-                const tunnelList = Array.from(tunnelMap.values()).sort((a, b) =>
-                  String(a.duong_lo).localeCompare(String(b.duong_lo), "vi")
-                );
-                if (tunnelList.length === 0) {
-                  return <div className="text-center text-xs text-slate-400 py-6">Chưa có dữ liệu đường lò trong tháng này</div>;
-                }
-                // KH tháng = KH năm / 12
-                const keHoachThangSL = kpiSLKH / 12;
-                const keHoachThangTD = kpiTDKH / 12;
-                return (
-                  <div className="overflow-x-auto scrollbar-hide -mx-4">
-                    <table className="w-full text-[12px] text-left min-w-[420px]">
-                      <thead>
-                        <tr className="border-b border-slate-200">
-                          <th className="px-3 py-2 font-semibold text-slate-600 text-[10px] uppercase tracking-wide">Đường lò</th>
-                          <th className="px-2 py-2 font-semibold text-slate-600 text-[10px] uppercase tracking-wide text-right">SL (tấn)</th>
-                          <th className="px-2 py-2 font-semibold text-slate-600 text-[10px] uppercase tracking-wide text-right">Đào (m)</th>
-                          <th className="px-2 py-2 font-semibold text-slate-600 text-[10px] uppercase tracking-wide text-right">Thiếu SL</th>
-                          <th className="px-2 py-2 font-semibold text-slate-600 text-[10px] uppercase tracking-wide text-right">Thiếu Đào</th>
+          )}
+
+          {/* ─── Bảng 2: Công trường Đào lò ──────────────────────────────────────── */}
+          {(daoLoSites.length || 0) > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm mb-3">
+              <div className="flex items-center gap-3 mb-3 px-4 py-3 bg-blue-50 border-l-4 border-blue-500 rounded-r-lg">
+                <Layers size={20} className="text-blue-600" />
+                <div className="text-xl font-bold text-slate-900">Công trường Đào lò</div>
+              </div>
+              <div className="text-[10px] text-slate-500 mb-2">Lũy kế tháng {month}/{year} · Click công trường để xem chi tiết</div>
+              {loadingCongTruong ? (
+                <div className="text-center text-xs text-slate-400 py-6">Đang tải dữ liệu công trường…</div>
+              ) : (
+                <div className="overflow-x-auto scrollbar-hide -mx-4">
+                  <table className="w-full text-[12px] border-collapse table-fixed">
+                    <colgroup>
+                      <col style={{ width: "120px" }} />
+                      <col style={{ width: "90px" }} />
+                      <col style={{ width: "75px" }} />
+                      <col style={{ width: "90px" }} />
+                      <col style={{ width: "120px" }} />
+                    </colgroup>
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th className="px-2 py-2 text-left font-semibold text-slate-600 text-[10px] uppercase tracking-wide">Công trường</th>
+                        <th className="px-2 py-2 text-right font-semibold text-slate-600 text-[10px] uppercase tracking-wide">Mét lò đào</th>
+                        <th className="px-2 py-2 text-right font-semibold text-slate-600 text-[10px] uppercase tracking-wide">Mét xén</th>
+                        <th className="px-2 py-2 text-right font-semibold text-slate-600 text-[10px] uppercase tracking-wide">Mét chống đội</th>
+                        <th className="px-2 py-2 text-left font-semibold text-slate-600 text-[10px] uppercase tracking-wide">Cập nhật</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {daoLoSites.map(site => (
+                        <tr
+                          key={site.tenCongTruong}
+                          onClick={() => setCongTruongModalOpen({ site, type: "dao_lo" })}
+                          className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors cursor-pointer"
+                        >
+                          <td className="px-2 py-2 font-semibold text-slate-900 whitespace-nowrap">{site.tenCongTruong}</td>
+                          <td className="px-2 py-2 text-right font-bold text-orange-600 tabular-nums">{Math.round(site.dao_lo).toLocaleString("vi-VN")}</td>
+                          <td className="px-2 py-2 text-right font-bold text-green-600 tabular-nums">{Math.round(site.xen_lo).toLocaleString("vi-VN")}</td>
+                          <td className="px-2 py-2 text-right font-bold text-red-600 tabular-nums">{Math.round(site.chong_doi).toLocaleString("vi-VN")}</td>
+                          <td className="px-2 py-2 text-[10px] text-slate-500 whitespace-nowrap">{site.thoiGianBaoCao}</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {tunnelList.map(t => {
-                          const sl = Number(t.san_luong_luy_ke) || 0;
-                          const td = Number(t.tien_do_luy_ke) || 0;
-                          const thieuSL = Math.max(keHoachThangSL - sl, 0);
-                          const thieuTD = Math.max(keHoachThangTD - td, 0);
-                          const d = parseVNDate(t.thoi_gian_bao_cao);
-                          const updateStr = d
-                            ? `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
-                            : "—";
-                          return (
-                            <tr key={t.duong_lo} className="border-b border-slate-100 last:border-0">
-                              <td className="px-3 py-2 font-semibold text-slate-900">Đường lò {t.duong_lo}</td>
-                              <td className="px-2 py-2 text-right font-bold text-blue-700">{Math.round(sl).toLocaleString("vi-VN")}</td>
-                              <td className="px-2 py-2 text-right font-bold text-orange-600">{Math.round(td).toLocaleString("vi-VN")}</td>
-                              <td className="px-2 py-2 text-right">
-                                {thieuSL > 0 ? (
-                                  <span className="font-semibold text-red-600">{Math.round(thieuSL).toLocaleString("vi-VN")}</span>
-                                ) : (
-                                  <span className="font-semibold text-green-600">Đạt</span>
-                                )}
-                              </td>
-                              <td className="px-2 py-2 text-right">
-                                {thieuTD > 0 ? (
-                                  <span className="font-semibold text-red-600">{Math.round(thieuTD).toLocaleString("vi-VN")}</span>
-                                ) : (
-                                  <span className="font-semibold text-green-600">Đạt</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t-2 border-blue-200 bg-blue-50/60">
-                          <td className="px-3 py-2 font-bold text-slate-900">Tổng</td>
-                          <td className="px-2 py-2 text-right font-bold text-blue-700">
-                            {Math.round(tunnelList.reduce((s, t) => s + (Number(t.san_luong_luy_ke) || 0), 0)).toLocaleString("vi-VN")}
-                          </td>
-                          <td className="px-2 py-2 text-right font-bold text-orange-700">
-                            {Math.round(tunnelList.reduce((s, t) => s + (Number(t.tien_do_luy_ke) || 0), 0)).toLocaleString("vi-VN")}
-                          </td>
-                          <td className="px-2 py-2 text-right font-bold text-red-600">
-                            {Math.round(Math.max(keHoachThangSL * tunnelList.length - tunnelList.reduce((s, t) => s + (Number(t.san_luong_luy_ke) || 0), 0), 0)).toLocaleString("vi-VN")}
-                          </td>
-                          <td className="px-2 py-2 text-right font-bold text-red-600">
-                            {Math.round(Math.max(keHoachThangTD * tunnelList.length - tunnelList.reduce((s, t) => s + (Number(t.tien_do_luy_ke) || 0), 0), 0)).toLocaleString("vi-VN")}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                );
-              })()}
-          </div>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Cảnh báo gần đây */}
           <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm mb-6">
@@ -964,6 +1043,83 @@ function MobileOverview({
                   </AreaChart>
                 </ResponsiveContainer>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Modal chi tiết Công trường (khi click vào công trường) ───────────────── */}
+      {congTruongModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end justify-center"
+          onClick={() => setCongTruongModalOpen(null)}
+        >
+          <div
+            className="bg-white rounded-t-3xl w-full max-h-[85vh] overflow-auto"
+            onClick={e => e.stopPropagation()}
+            style={{ animation: "m-slideUp 0.32s cubic-bezier(0.32, 0.72, 0, 1)" }}
+          >
+            <div className="flex justify-center py-3">
+              <div style={{ width: 40, height: 4, borderRadius: 99, background: "#CBD5E1" }} />
+            </div>
+            <div className="flex items-center justify-between px-5 pb-3 border-b border-slate-200 flex-shrink-0">
+              <div>
+                <h2 className="font-bold text-slate-900 text-base" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                  Chi tiết: {congTruongModalOpen.site.tenCongTruong} ({congTruongModalOpen.type === "khai_thac" ? "Khai thác" : "Đào lò"})
+                </h2>
+                <p className="text-[10px] text-slate-500">
+                  Tháng {month}/{year} · Cập nhật: {congTruongModalOpen.site.thoiGianBaoCao}
+                </p>
+              </div>
+              <button
+                onClick={() => setCongTruongModalOpen(null)}
+                className="p-2 rounded-lg hover:bg-slate-100 flex-shrink-0"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="px-3 pb-5">
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                {(() => {
+                  const site = congTruongModalOpen.site;
+                  const isKhaiThac = congTruongModalOpen.type === "khai_thac";
+                  const items = isKhaiThac
+                    ? [
+                        { label: "Tấn than (lũy kế)", value: site.lo_cho, unit: "tấn", keHoach: keHoachThang.lo_cho, conLai: site.conLai?.lo_cho, tbNgay: site.tbNgay?.lo_cho },
+                        { label: "Mét lò đào (lũy kế)", value: site.dao_lo, unit: "mét", keHoach: keHoachThang.dao_lo, conLai: site.conLai?.dao_lo, tbNgay: site.tbNgay?.dao_lo },
+                        { label: "Mét xén (lũy kế)", value: site.xen_lo, unit: "mét", keHoach: keHoachThang.xen_lo, conLai: site.conLai?.xen_lo, tbNgay: site.tbNgay?.xen_lo },
+                        { label: "Mét chống đội (lũy kế)", value: site.chong_doi, unit: "mét", keHoach: keHoachThang.chong_doi, conLai: site.conLai?.chong_doi, tbNgay: site.tbNgay?.chong_doi },
+                      ]
+                    : [
+                        { label: "Mét lò đào (lũy kế)", value: site.dao_lo, unit: "mét", keHoach: keHoachThang.dao_lo, conLai: site.conLai?.dao_lo, tbNgay: site.tbNgay?.dao_lo },
+                        { label: "Mét xén (lũy kế)", value: site.xen_lo, unit: "mét", keHoach: keHoachThang.xen_lo, conLai: site.conLai?.xen_lo, tbNgay: site.tbNgay?.xen_lo },
+                        { label: "Mét chống đội (lũy kế)", value: site.chong_doi, unit: "mét", keHoach: keHoachThang.chong_doi, conLai: site.conLai?.chong_doi, tbNgay: site.tbNgay?.chong_doi },
+                      ];
+                  return items.map((item, idx) => (
+                    <div key={idx} className="bg-slate-50 rounded-xl border border-slate-200 p-3">
+                      <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">{item.label}</p>
+                      <div className="text-[24px] font-extrabold text-slate-900 leading-none">
+                        {Math.round(item.value).toLocaleString("vi-VN")}
+                        <span className="text-sm font-medium ml-1 opacity-60">{item.unit}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-slate-200 text-[10px]">
+                        <div className="text-center">
+                          <div className="text-slate-400">KH tháng</div>
+                          <div className="font-semibold text-blue-700">{Math.round(item.keHoach).toLocaleString("vi-VN")} {item.unit}</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-slate-400">Còn thiếu</div>
+                          <div className="font-semibold text-red-600">{Math.round(item.conLai || 0).toLocaleString("vi-VN")} {item.unit}</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-slate-400">TB/ngày ({remainingDays} ng)</div>
+                          <div className="font-semibold text-orange-600">{Math.round(item.tbNgay || 0).toLocaleString("vi-VN")} {item.unit}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
             </div>
           </div>
         </div>

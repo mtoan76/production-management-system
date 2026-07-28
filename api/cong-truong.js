@@ -7,16 +7,6 @@ const pool = new Pool({
   max: 1,
 });
 
-const KHAI_THAC_SITES = ["CT Khai thác 1", "CT Khai thác 2", "CT Khai thác 3", "CT Khai thác 5", "CT Khai thác 6", "CT Khai thác 8", "Cơ giới hóa 1"];
-const DAO_LO_SITES = ["CT Đào lò 1", "CT Đào lò 2", "CT Đào lò 3", "CT Đào lò 6"];
-
-const KE_HOACH_NAM = {
-  lo_cho:   Number(process.env.KE_HOACH_SAN_LUONG) || 1000000,
-  dao_lo:   Number(process.env.KE_HOACH_DAO_LO)    || 12000,
-  xen_lo:    Number(process.env.KE_HOACH_XEN_LO)     || 6000,
-  chong_doi: Number(process.env.KE_HOACH_CHONG_DOI) || 6000,
-};
-
 function clampMonth(v, fallback) {
   const n = parseInt(v, 10);
   if (Number.isNaN(n)) return fallback;
@@ -28,12 +18,32 @@ function clampYear(v, fallback) {
   return Math.max(1970, Math.min(9999, n));
 }
 
+// Danh sách công trường khai thác (đồng bộ với server)
+const KHAI_THAC_SITES = [
+  "CT Khai thác 1", "CT Khai thác 2", "CT Khai thác 3",
+  "CT Khai thác 5", "CT Khai thác 6", "CT Khai thác 8",
+  "Cơ giới hóa 1",
+];
+// Danh sách công trường đào lò (đồng bộ với server)
+const DAO_LO_SITES = [
+  "CT Đào lò 1", "CT Đào lò 2", "CT Đào lò 3", "CT Đào lò 6",
+];
+
+// Kế hoạch năm cho 4 loại công việc (đồng bộ với server)
+const KE_HOACH_NAM = {
+  lo_cho:   Number(process.env.KE_HOACH_SAN_LUONG) || 1000000,
+  dao_lo:   Number(process.env.KE_HOACH_DAO_LO)    || 12000,
+  xen_lo:    Number(process.env.KE_HOACH_XEN_LO)     || 6000,
+  chong_doi: Number(process.env.KE_HOACH_CHONG_DOI) || 6000,
+};
+
+// Helper: tính số ngày còn lại trong tháng (đồng bộ với server)
 function getRemainingDaysInMonth(month, year) {
   const today = new Date();
   const daysInMonth = new Date(year, month, 0).getDate();
   const isCurrentMonth = year === today.getFullYear() && month === today.getMonth() + 1;
   const isFutureMonth = year > today.getFullYear() || (year === today.getFullYear() && month > today.getMonth() + 1);
-  
+
   if (isCurrentMonth) {
     return Math.max(daysInMonth - today.getDate(), 0);
   }
@@ -50,6 +60,7 @@ export default async function handler(req, res) {
     const thang = clampMonth(req.query.thang, now.getMonth() + 1);
     const nam = clampYear(req.query.nam, now.getFullYear());
 
+    // Query lấy lũy kế tháng theo công trường và loại công việc (đồng bộ server)
     const query = `
       WITH daily_by_site AS (
         SELECT
@@ -87,41 +98,50 @@ export default async function handler(req, res) {
 
     const result = await pool.query(query, [thang, nam]);
 
+    // Phân loại dữ liệu theo 2 bảng
     const khaiThacData = [];
     const daoLoData = [];
 
     for (const row of result.rows) {
       const isKhaiThac = KHAI_THAC_SITES.includes(row.tenCongTruong);
       const isDaoLo = DAO_LO_SITES.includes(row.tenCongTruong);
-
       if (isKhaiThac) khaiThacData.push(row);
       if (isDaoLo) daoLoData.push(row);
     }
 
+    // Helper: tạo map khởi tạo tất cả công trường (đồng bộ server)
     function createSiteMap(sites, includeLoCho) {
       const map = new Map();
       for (const name of sites) {
-        const site = { tenCongTruong: name, lo_cho: 0, dao_lo: 0, xen_lo: 0, chong_doi: 0, thoiGianBaoCao: "—" };
-        if (!includeLoCho) site.lo_cho = undefined;
+        const site = {
+          tenCongTruong: name,
+          lo_cho: 0,
+          dao_lo: 0,
+          xen_lo: 0,
+          chong_doi: 0,
+          thoiGianBaoCao: "—",
+        };
+        if (!includeLoCho) delete site.lo_cho;
         map.set(name, site);
       }
       return map;
     }
 
+    const khaiThacMap = createSiteMap(KHAI_THAC_SITES, true);
+    const daoLoMap = createSiteMap(DAO_LO_SITES, false);
+
     function mergeData(map, rows) {
       for (const row of rows) {
-        const site = map.get(row.tenCongTruong);
+        const name = row.tenCongTruong;
+        const site = map.get(name);
         if (site) {
           site[row.loaiCongViec] = Number(row.sanLuongLuyKe) || 0;
-          if (row.thoiGianBaoCao && (!site.thoiGianBaoCao || row.thoiGianBaoCao > site.thoiGianBaoCao)) {
+          if (row.thoiGianBaoCao) {
             site.thoiGianBaoCao = row.thoiGianBaoCao;
           }
         }
       }
     }
-
-    const khaiThacMap = createSiteMap(KHAI_THAC_SITES, true);
-    const daoLoMap = createSiteMap(DAO_LO_SITES, false);
 
     mergeData(khaiThacMap, khaiThacData);
     mergeData(daoLoMap, daoLoData);
@@ -134,6 +154,7 @@ export default async function handler(req, res) {
     const khaiThacSorted = sortByList(Array.from(khaiThacMap.values()), KHAI_THAC_SITES);
     const daoLoSorted = sortByList(Array.from(daoLoMap.values()), DAO_LO_SITES);
 
+    // Tính toán các chỉ số bổ sung cho modal detail (đồng bộ server)
     const remainingDays = getRemainingDaysInMonth(thang, nam);
     const keHoachThang = {
       lo_cho:   Math.round(KE_HOACH_NAM.lo_cho / 12),
@@ -152,7 +173,7 @@ export default async function handler(req, res) {
           chong_doi: site.chong_doi || 0,
           thoiGianBaoCao: site.thoiGianBaoCao || "—",
         };
-        
+
         if (includeLoCho) {
           detail.keHoachThang = keHoachThang;
           detail.conLai = {

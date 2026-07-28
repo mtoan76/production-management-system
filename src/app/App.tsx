@@ -11,6 +11,7 @@ import {
   Layers, XCircle,Loader2, Download, History,
   FileText, Sparkles, Filter, ArrowUpRight,
   FileSpreadsheet, FileImage, CheckCircle2, Package,
+  Calendar,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────
@@ -481,20 +482,38 @@ type BaoCaoListItem = {
   report_id: number;
   created_at: string;
   ngay: string | null;
-  ca: number | string | null;
+  cong_truong: string | null;
+  so_lao_dong: number | null;
+  so_ca: number;
+  tong_so_lao_dong: number;
+  co_su_co: boolean;
+};
+type CaHangMuc = {
+  id: number;
   duong_lo: string | null;
-  don_vi_thi_cong: string | null;
-  nguoi_bao_cao: string | null;
-  so_dong_ai: number;
-  so_dong_duong_lo: number;
-  co_text: boolean;
-  tinh_trang: string;
+  loai_cong_viec: string;
+  san_luong: string | number | null;
+  tiet_dien: string | number | null;
+  tiet_dien_don_vi: string | null;
+};
+type CaData = {
+  ca: number;
+  ngay: string | null;
+  cong_truong: string | null;
+  so_lao_dong: string | number | null;
+  cong_viec_khac: string | null;
+  su_co: string | null;
+  ghi_chu: string | null;
+  hang_muc_by_type: {
+    lo_cho: CaHangMuc[];
+    dao_lo: CaHangMuc[];
+    xen_lo: CaHangMuc[];
+    chong_doi: CaHangMuc[];
+  };
 };
 type BaoCaoDetail = {
   report: { id: number; created_at: string };
-  ai_output: any[];
-  duong_lo: any[];
-  text_raw: { report_id: number; noi_dung: string } | null;
+  ca_list: CaData[];
 };
 type CanhBaoListItem = {
   id: number;
@@ -1110,6 +1129,8 @@ function InputScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
 // ─── Screen 1.1: Lịch sử báo cáo ──────────────────────────
 function HistoryScreen() {
   const [search, setSearch] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [list, setList] = useState<BaoCaoListItem[]>([]);
@@ -1124,7 +1145,13 @@ function HistoryScreen() {
       setLoading(true);
       setErrorMsg("");
       try {
-        const res = await fetch(N8N_BAO_CAO_LIST_URL);
+        const params = new URLSearchParams();
+        if (fromDate) params.set("tu_ngay", fromDate);
+        if (toDate)   params.set("den_ngay", toDate);
+        if (search.trim()) params.set("cong_truong", search.trim());
+        const qs = params.toString();
+        const url = `${N8N_BAO_CAO_LIST_URL}${qs ? "?" + qs : ""}`;
+        const res = await fetch(url);
         if (!res.ok) throw new Error(`Server trả về ${res.status}`);
         const data = await res.json();
         if (cancelled) return;
@@ -1137,22 +1164,13 @@ function HistoryScreen() {
     }
     load();
     return () => { cancelled = true; };
-  }, [refreshTick]);
+  }, [refreshTick, search, fromDate, toDate]);
 
   const openDetail = (id: number) => {
     setSelectedId(id);
   };
 
-  const filtered = list
-    .filter(item => {
-      const q = search.trim().toLowerCase();
-      if (!q) return true;
-      return (
-        (item.duong_lo || "").toLowerCase().includes(q) ||
-        (item.don_vi_thi_cong || "").toLowerCase().includes(q) ||
-        (item.nguoi_bao_cao || "").toLowerCase().includes(q)
-      );
-    });
+  const filtered = list;
 
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -1172,6 +1190,15 @@ function HistoryScreen() {
   // Lấy phần "dd/mm/yyyy" từ timestamp ISO
   const fmtDateOnly = (iso: string) => fmtDateTime(iso).split(" ")[0];
 
+  // Format ngày từ string "yyyy-mm-dd" hoặc ISO
+  const fmtDate = (dateStr: string | null) => {
+    if (!dateStr) return "—";
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return dateStr;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  };
+
   return (
     <div className="p-8 flex flex-col gap-6 min-h-screen bg-[#F8FAFC]">
       <div className="flex items-center justify-between">
@@ -1190,9 +1217,37 @@ function HistoryScreen() {
           <input
             value={search}
             onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
-            placeholder="Tìm kiếm theo đường lò, đơn vị, người báo cáo..."
+            placeholder="Tìm kiếm theo công trường..."
             className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-700 outline-none focus:border-blue-400 transition-colors placeholder-gray-400"
           />
+        </div>
+        <div className="flex items-center gap-2 bg-gray-50 rounded-lg border border-gray-200 px-3 py-2">
+          <Calendar size={14} className="text-gray-400" />
+          <input
+            type="date"
+            value={fromDate}
+            onChange={e => { setFromDate(e.target.value); setCurrentPage(1); }}
+            title="Từ ngày"
+            className="bg-transparent text-sm text-gray-700 outline-none w-[130px]"
+          />
+          <span className="text-gray-400 text-xs">→</span>
+          <input
+            type="date"
+            value={toDate}
+            min={fromDate || undefined}
+            onChange={e => { setToDate(e.target.value); setCurrentPage(1); }}
+            title="Đến ngày"
+            className="bg-transparent text-sm text-gray-700 outline-none w-[130px]"
+          />
+          {(fromDate || toDate) && (
+            <button
+              onClick={() => { setFromDate(""); setToDate(""); setCurrentPage(1); }}
+              title="Xoá khoảng ngày"
+              className="text-gray-400 hover:text-red-500 transition-colors"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
         <button
           onClick={() => setRefreshTick(t => t + 1)}
@@ -1220,17 +1275,16 @@ function HistoryScreen() {
             <thead>
               <tr>
                 <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap">Ngày</th>
-                <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap">Thời gian</th>
-                <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap">Ca</th>
-                <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100">Đường lò</th>
-                <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100">Đơn vị thi công</th>
-                <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap">Người báo cáo</th>
-                <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap">Trạng thái</th>
+                <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap">Công trường</th>
+                <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap text-center">Số ca</th>
+                <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap text-center">Số LĐ</th>
+                <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap text-center">Sự cố</th>
+                <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap">Cập nhật</th>
+                <th className="px-6 py-4 text-sm font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap text-center">Trạng thái</th>
               </tr>
             </thead>
             <tbody>
               {paginated.map(item => {
-                const [datePart, timePart] = fmtDateTime(item.created_at).split(" ");
                 return (
                   <tr
                     key={item.report_id}
@@ -1238,23 +1292,49 @@ function HistoryScreen() {
                     className="border-b last:border-0 border-gray-100 hover:bg-gray-50/80 transition-colors cursor-pointer"
                   >
                     <td className="px-6 py-4 font-medium text-gray-800 whitespace-nowrap align-top text-xs">
-                      {datePart || <span className="text-gray-400 italic">—</span>}
+                      {fmtDate(item.ngay)}
                     </td>
-                    <td className="px-6 py-4 text-gray-600 whitespace-nowrap align-top text-xs">
-                      {timePart || <span className="text-gray-400 italic">—</span>}
+                    <td className="px-6 py-4 text-gray-700 align-top">
+                      {item.cong_truong || <span className="text-gray-400 italic">—</span>}
                     </td>
-                    <td className="px-6 py-4 text-gray-700 whitespace-nowrap align-top">{item.ca ?? <span className="text-gray-400">—</span>}</td>
-                    <td className="px-6 py-4 text-gray-700 max-w-[260px] align-top">
-                      <div>{item.duong_lo || <span className="text-gray-400 italic">—</span>}</div>
-                      {item.so_dong_ai > 1 && (
-                        <span className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                          +{item.so_dong_ai - 1} dòng
+                    <td className="px-6 py-4 text-gray-700 whitespace-nowrap align-top text-center font-semibold">
+                      {item.so_ca}
+                    </td>
+                    <td className="px-6 py-4 text-gray-700 whitespace-nowrap align-top text-center font-semibold tabular-nums">
+                      {item.tong_so_lao_dong ?? 0}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap align-top text-center">
+                      {item.co_su_co ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
+                          Có
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-green-50 text-green-700 border border-green-200">
+                          Không
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-gray-700 align-top">{item.don_vi_thi_cong || <span className="text-gray-400 italic">—</span>}</td>
-                    <td className="px-6 py-4 text-gray-700 whitespace-nowrap align-top">{item.nguoi_bao_cao || <span className="text-gray-400 italic">—</span>}</td>
-                    <td className="px-6 py-4 align-top"><HistoryStatusBadge status={item.tinh_trang as any} /></td>
+                    <td className="px-6 py-4 text-gray-600 whitespace-nowrap align-top text-xs">
+                      {item.created_at ? (() => {
+                        const d = new Date(item.created_at);
+                        if (Number.isNaN(d.getTime())) return item.created_at;
+                        const pad = (n: number) => String(n).padStart(2, "0");
+                        return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                      })() : <span className="text-gray-400 italic">—</span>}
+                    </td>
+                    <td className="px-6 py-4 align-top text-center">
+                      {item.co_su_co ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                          Có sự cố
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                          Bình thường
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -1269,9 +1349,14 @@ function HistoryScreen() {
         </div>
 
         {/* Pagination */}
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
+        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-3 flex-wrap">
           <p className="text-sm text-gray-500">
             Hiển thị {rangeStart}-{rangeEnd} trong tổng số {total} báo cáo
+            {(search || fromDate || toDate) && (
+              <span className="ml-2 text-xs text-blue-600 font-medium">
+                (đang lọc{search ? ` · công trường: "${search}"` : ""}{fromDate ? ` · từ ${fromDate}` : ""}{toDate ? ` · đến ${toDate}` : ""})
+              </span>
+            )}
           </p>
           {totalPages > 1 && (
             <div className="flex items-center gap-2">
@@ -1322,24 +1407,23 @@ function HistoryDetailModal({ historyId, onClose }: { historyId: number | null; 
   const [detail, setDetail] = useState<BaoCaoDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [expandedCas, setExpandedCas] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     if (historyId == null) return;
+    setExpandedCas(new Set()); // reset accordion khi mở report mới
     let cancelled = false;
     async function load() {
       setLoading(true);
       setErrorMsg("");
       try {
-        // Express server hỗ trợ path param /:id nên dùng trực tiếp
         const res = await fetch(`${N8N_BAO_CAO_DETAIL_URL}/${historyId}`);
         if (!res.ok) throw new Error(`Server trả về ${res.status}`);
         const data = await res.json();
         if (cancelled) return;
         setDetail({
-          report:    data.report,
-          ai_output: data.ai_output || [],
-          duong_lo:  data.duong_lo || [],
-          text_raw:  data.text_raw || null,
+          report: data.report,
+          ca_list: Array.isArray(data.ca_list) ? data.ca_list : [],
         });
       } catch (err: any) {
         if (!cancelled) setErrorMsg(err?.message || "Lỗi tải chi tiết báo cáo");
@@ -1353,12 +1437,9 @@ function HistoryDetailModal({ historyId, onClose }: { historyId: number | null; 
 
   if (historyId == null) return null;
 
-  const firstAi = detail?.ai_output?.[0];
-  const aiRows = detail?.ai_output ?? [];
-  const duongLoRows = detail?.duong_lo ?? [];
-  const textRaw = detail?.text_raw;
+  const caList = detail?.ca_list ?? [];
 
-  // Helper format ngày/giờ — chấp nhận cả ISO datetime lẫn "yyyy-mm-dd"
+  // Helper format ngày/giờ
   const pad = (n: number) => String(n).padStart(2, "0");
   const parseDate = (s?: string | null): Date | null => {
     if (!s) return null;
@@ -1370,11 +1451,6 @@ function HistoryDetailModal({ historyId, onClose }: { historyId: number | null; 
     if (!d) return "—";
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
   };
-  const fmtTime = (date?: string | null) => {
-    const d = parseDate(date);
-    if (!d) return "—";
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  };
   const splitDateTime = (date?: string | null) => {
     const d = parseDate(date);
     if (!d) return ["—", "—"];
@@ -1384,270 +1460,234 @@ function HistoryDetailModal({ historyId, onClose }: { historyId: number | null; 
     ];
   };
 
-  // Tổng hợp "worst" tinh_trang
-  const worstStatus = (() => {
-    const order: Record<string, number> = { "Nghiêm trọng": 3, "Cảnh báo": 2, "Bình thường": 1 };
-    let best = "Bình thường";
-    let bestRank = 1;
-    for (const r of aiRows) {
-      const t = (r.tinh_trang || "Bình thường").trim();
-      const rank = order[t] || 0;
-      if (rank > bestRank) { best = t; bestRank = rank; }
-    }
-    return best;
-  })();
-
   const [ngayGui, gioGui] = splitDateTime(detail?.report?.created_at);
+
+  // Phân loại sự cố dựa trên text (bất kỳ ca nào có su_co thật sự)
+  const hasIncident = caList.some(ca => {
+    const s = (ca.su_co || "").trim().toLowerCase();
+    return s && !s.includes("bình thường") && !s.includes("không có sự cố");
+  });
+
+  // Mapping 4 loại công việc → màu sắc (đồng bộ với Excel template gốc)
+  const TYPE_CFG: Record<string, { label: string; unit: string; gradient: [string, string]; accent: string; dot: string }> = {
+    lo_cho:    { label: "Sản lượng (lò chợ)", unit: "tấn", gradient: ["#065F46", "#10B981"], accent: "bg-emerald-50 border-emerald-200 text-emerald-700", dot: "bg-emerald-500" },
+    dao_lo:    { label: "Đào lò",             unit: "mét",  gradient: ["#1E40AF", "#2563EB"], accent: "bg-blue-50 border-blue-200 text-blue-700",       dot: "bg-blue-500" },
+    xen_lo:    { label: "Xén lò",             unit: "mét",  gradient: ["#9A3412", "#EA580C"], accent: "bg-orange-50 border-orange-200 text-orange-700", dot: "bg-orange-500" },
+    chong_doi: { label: "Chống đội",          unit: "mét",  gradient: ["#6B21A8", "#A855F7"], accent: "bg-purple-50 border-purple-200 text-purple-700", dot: "bg-purple-500" },
+  };
+
+  const toggleCa = (ca: number) => {
+    setExpandedCas(prev => {
+      const next = new Set(prev);
+      next.has(ca) ? next.delete(ca) : next.add(ca);
+      return next;
+    });
+  };
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-6"
-      style={{ background:"rgba(0,0,0,0.3)", backdropFilter:"blur(2px)" }}
+      style={{ background: "rgba(0,0,0,0.3)", backdropFilter: "blur(2px)" }}
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-[1280px] max-h-[92vh] overflow-y-auto p-8 flex flex-col gap-6"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-[1100px] max-h-[92vh] overflow-y-auto p-7 flex flex-col gap-5"
         onClick={e => e.stopPropagation()}
       >
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3 pb-5 border-b border-gray-200">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-            Chi tiết báo cáo
-          </h1>
-          <p className="text-xs text-gray-500 mt-1 flex items-center gap-3 flex-wrap">
-            <span>Mã báo cáo: <span className="font-mono font-semibold">#{historyId}</span></span>
-            <span className="text-gray-300">|</span>
-            <span className="inline-flex items-center gap-1">
-              <Clock size={11} />
-              Gửi lúc:&nbsp;
-              <span className="font-semibold">{ngayGui}</span>
-              <span className="text-gray-400">lúc</span>
-              <span className="font-semibold">{gioGui}</span>
-            </span>
-          </p>
-        </div>
-        <button
-          onClick={onClose}
-          title="Đóng"
-          className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-        >
-          <X size={18} strokeWidth={2} />
-        </button>
-      </div>
-
-      {loading && (
-        <div className="text-sm text-gray-500 py-8 text-center">Đang tải chi tiết báo cáo...</div>
-      )}
-      {errorMsg && !loading && (
-        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-medium" style={{ background: "#FEF2F2", color: "#DC2626" }}>
-          <AlertTriangle size={14} />{errorMsg}
-        </div>
-      )}
-
-      {!loading && !errorMsg && detail && (
-        <>
-          {/* Thông tin báo cáo (trên cùng, full width) */}
-          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-            <div className="px-6 pt-4 pb-3 border-b border-gray-100">
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Thông tin báo cáo</p>
-            </div>
-            <div className="grid grid-cols-2 lg:grid-cols-5 divide-x divide-gray-100">
-              <div className="px-6 py-4">
-                <p className="text-[11px] text-gray-400 mb-1 uppercase tracking-wide">Ca</p>
-                <p className="text-base font-bold text-gray-900">{firstAi?.ca ?? "—"}</p>
-              </div>
-              <div className="px-6 py-4">
-                <p className="text-[11px] text-gray-400 mb-1 uppercase tracking-wide">Đơn vị thi công</p>
-                <p className="text-sm font-bold text-gray-900 leading-tight">{firstAi?.don_vi_thi_cong || "—"}</p>
-              </div>
-              <div className="px-6 py-4">
-                <p className="text-[11px] text-gray-400 mb-1 uppercase tracking-wide">Người báo cáo</p>
-                <p className="text-sm font-bold text-gray-900">{firstAi?.nguoi_bao_cao || "—"}</p>
-              </div>
-              <div className="px-6 py-4">
-                <p className="text-[11px] text-gray-400 mb-1 uppercase tracking-wide">Số dòng AI</p>
-                <p className="text-base font-bold text-blue-700">{aiRows.length}</p>
-              </div>
-              <div className="px-6 py-4">
-                <p className="text-[11px] text-gray-400 mb-1 uppercase tracking-wide">Trạng thái</p>
-                <HistoryStatusBadge status={worstStatus} />
-              </div>
-            </div>
+        {/* Header */}
+        <div className="flex items-center justify-between flex-wrap gap-3 pb-4 border-b border-gray-200">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+              Chi tiết báo cáo
+            </h1>
+            <p className="text-xs text-gray-500 mt-1 flex items-center gap-3 flex-wrap">
+              <span>Mã báo cáo: <span className="font-mono font-semibold">#{historyId}</span></span>
+              <span className="text-gray-300">|</span>
+              <span className="inline-flex items-center gap-1">
+                <Clock size={11} />
+                Gửi lúc:&nbsp;
+                <span className="font-semibold">{ngayGui}</span>
+                <span className="text-gray-400">lúc</span>
+                <span className="font-semibold">{gioGui}</span>
+              </span>
+              <span className="text-gray-300">|</span>
+              <span>{caList.length} ca</span>
+              <span className="text-gray-300">|</span>
+              {hasIncident ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Có sự cố
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-50 text-green-700 border border-green-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Bình thường
+                </span>
+              )}
+            </p>
           </div>
+          <button
+            onClick={onClose}
+            title="Đóng"
+            className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+          >
+            <X size={18} strokeWidth={2} />
+          </button>
+        </div>
 
-          {/* 2 log panels: bên trái raw data, bên phải AI output */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-            {/* LEFT: Dữ liệu gốc */}
-            <div className="flex flex-col gap-5">
-              {/* Dữ liệu từ file Excel (nhat_ky_duong_lo) */}
-              <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-                <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100" style={{ background: "#F8FAFC" }}>
-                  <div className="flex items-center gap-2">
-                    <FileText size={14} className="text-blue-600" />
-                    <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                      Dữ liệu từ file (Excel)
-                    </p>
-                  </div>
-                  <span className="text-[11px] font-semibold text-gray-400">{duongLoRows.length} dòng</span>
-                </div>
-                <div className="p-5">
-                  {duongLoRows.length === 0 ? (
-                    <p className="text-sm text-gray-400 italic py-2">Báo cáo này không có dữ liệu Excel.</p>
-                  ) : (
-                    <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-                      {duongLoRows.map((r: any, idx: number) => (
-                        <div key={r.id} className="rounded-lg border border-gray-100 p-3" style={{ background: "#FAFAFA" }}>
-                          <div className="flex items-center gap-2 flex-wrap mb-2">
-                            <span className="text-xs font-bold text-gray-900">{fmtDate(r.ngay)}</span>
-                            <span className="text-[10px] text-gray-400">·</span>
-                            <span className="text-xs text-gray-600">Ca {r.ca ?? "—"}</span>
-                            {r.duong_lo && (
-                              <>
-                                <span className="text-[10px] text-gray-400">·</span>
-                                <span className="text-xs font-semibold text-blue-700">{r.duong_lo}</span>
-                              </>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-5 gap-1.5 text-center text-[11px]">
-                            <div className="bg-white rounded px-1 py-1 border border-gray-100">
-                               <div className="font-bold text-blue-700 text-sm">{Math.round(Number(r.san_luong_than || 0)).toLocaleString("vi-VN")}</div>
-                              <div className="text-gray-400 text-[9px]">SL (tấn)</div>
-                            </div>
-                            <div className="bg-white rounded px-1 py-1 border border-gray-100">
-                              <div className="font-bold text-gray-900 text-sm">{Number(r.dao_lo_thuc_hien_m || 0)}</div>
-                              <div className="text-gray-400 text-[9px]">Đào (m)</div>
-                            </div>
-                            <div className="bg-white rounded px-1 py-1 border border-gray-100">
-                              <div className="font-bold text-gray-900 text-sm">{Number(r.xen_lo_thuc_hien_m || 0)}</div>
-                              <div className="text-gray-400 text-[9px]">Xén (m)</div>
-                            </div>
-                            <div className="bg-white rounded px-1 py-1 border border-gray-100">
-                              <div className="font-bold text-gray-900 text-sm">{Number(r.chong_thuc_hien_m || 0)}</div>
-                              <div className="text-gray-400 text-[9px]">Chống (m)</div>
-                            </div>
-                            <div className="bg-white rounded px-1 py-1 border border-gray-100">
-                              <div className="font-bold text-orange-600 text-sm">{Number(r.khau_lo_thuc_hien_m || 0)}</div>
-                              <div className="text-gray-400 text-[9px]">Khấu (m)</div>
-                            </div>
-                          </div>
-                          {r.don_vi_thi_cong && (
-                            <p className="text-[11px] text-gray-500 mt-2">ĐV thi công: {r.don_vi_thi_cong}</p>
+        {loading && (
+          <div className="text-sm text-gray-500 py-8 text-center">Đang tải chi tiết báo cáo...</div>
+        )}
+        {errorMsg && !loading && (
+          <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-medium" style={{ background: "#FEF2F2", color: "#DC2626" }}>
+            <AlertTriangle size={14} />{errorMsg}
+          </div>
+        )}
+
+        {!loading && !errorMsg && detail && caList.length === 0 && (
+          <div className="text-sm text-gray-400 italic py-12 text-center">
+            Báo cáo này chưa có dữ liệu ca nào.
+          </div>
+        )}
+
+        {!loading && !errorMsg && caList.length > 0 && (
+          <div className="flex flex-col gap-3">
+            {caList.map((ca, idx) => {
+              const isOpen = expandedCas.has(ca.ca);
+              const s = (ca.su_co || "").trim();
+              const isInc = s && !s.toLowerCase().includes("bình thường") && !s.toLowerCase().includes("không có sự cố");
+              return (
+                <div key={ca.ca ?? idx} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                  {/* Ca header — click để expand/collapse */}
+                  <button
+                    onClick={() => toggleCa(ca.ca)}
+                    className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50/60 transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-3 flex-wrap min-w-0">
+                      <span className="inline-flex items-center justify-center min-w-[44px] px-3 py-1 rounded-lg text-xs font-bold text-white" style={{ background: "linear-gradient(135deg,#1E40AF,#2563EB)" }}>
+                        Ca {ca.ca}
+                      </span>
+                      <span className="text-sm font-semibold text-gray-900">{fmtDate(ca.ngay)}</span>
+                      <span className="text-xs text-gray-500">· {ca.cong_truong || "—"}</span>
+                      <span className="text-xs text-gray-500">· <strong className="text-gray-800">{Number(ca.so_lao_dong) || 0}</strong> LĐ</span>
+                      {isInc ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Sự cố
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-50 text-green-700 border border-green-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Bình thường
+                        </span>
+                      )}
+                    </div>
+                    <ChevronDown size={18} className={`text-gray-400 flex-shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                  </button>
+
+                  {isOpen && (
+                    <div className="border-t border-gray-100 px-5 py-4 flex flex-col gap-4" style={{ background: "#FAFBFC" }}>
+                      {/* Thông tin chung của Ca */}
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                        <InfoCell label="Ngày" value={fmtDate(ca.ngay)} />
+                        <InfoCell label="Công trường" value={ca.cong_truong || "—"} />
+                        <InfoCell label="Số lao động" value={`${Number(ca.so_lao_dong) || 0} người`} />
+                        <InfoCell
+                          label="Trạng thái"
+                          value={isInc ? "Có sự cố" : "Bình thường"}
+                          tone={isInc ? "red" : "green"}
+                        />
+                      </div>
+
+                      {(ca.cong_viec_khac || ca.su_co || ca.ghi_chu) && (
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                          {ca.cong_viec_khac && (
+                            <InfoCell label="Công việc khác" value={ca.cong_viec_khac} />
+                          )}
+                          {ca.su_co && (
+                            <InfoCell label="Sự cố" value={ca.su_co} tone={isInc ? "red" : "gray"} />
+                          )}
+                          {ca.ghi_chu && (
+                            <InfoCell label="Ghi chú" value={ca.ghi_chu} />
                           )}
                         </div>
-                      ))}
+                      )}
+
+                      {/* 4 nhóm hạng mục */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        {(["lo_cho", "dao_lo", "xen_lo", "chong_doi"] as const).map(type => {
+                          const cfg = TYPE_CFG[type];
+                          const items = (ca.hang_muc_by_type?.[type] as any[]) || [];
+                          const total = items.reduce((sum, h) => sum + (Number(h.san_luong) || 0), 0);
+                          return (
+                            <div key={type} className="rounded-xl border border-gray-200 overflow-hidden bg-white">
+                              <div
+                                className="flex items-center justify-between px-4 py-2.5"
+                                style={{ background: `linear-gradient(135deg, ${cfg.gradient[0]}, ${cfg.gradient[1]})` }}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
+                                  <span className="text-sm font-bold text-white">{cfg.label}</span>
+                                </div>
+                                <span className="text-[11px] font-semibold text-white/90 bg-white/15 px-2 py-0.5 rounded-full border border-white/20">
+                                  {items.length} mục · {cfg.unit}
+                                </span>
+                              </div>
+                              {items.length === 0 ? (
+                                <p className="text-xs text-gray-400 italic px-4 py-3">Không có hạng mục {cfg.label.toLowerCase()} trong ca này.</p>
+                              ) : (
+                                <div className="divide-y divide-gray-100">
+                                  {items.map(h => (
+                                    <div key={h.id} className="grid grid-cols-12 gap-2 px-4 py-2.5 items-center hover:bg-gray-50/60 transition-colors">
+                                      <div className="col-span-7 min-w-0">
+                                        <p className="text-sm font-semibold text-gray-900 truncate" title={h.duong_lo || ""}>
+                                          {h.duong_lo || "—"}
+                                        </p>
+                                        {h.tiet_dien && (
+                                          <p className="text-[11px] text-gray-500 mt-0.5">
+                                            Tiết diện: <strong className="text-gray-700">{Number(h.tiet_dien).toLocaleString("vi-VN")}</strong> {h.tiet_dien_don_vi || "m²"}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <div className="col-span-5 text-right">
+                                        <p className={`text-base font-black tabular-nums ${cfg.accent.split(" ")[2]}`}>
+                                          {Number(h.san_luong || 0).toLocaleString("vi-VN")}
+                                        </p>
+                                        <p className="text-[10px] text-gray-400 mt-0.5">{cfg.unit}</p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                  <div className={`px-4 py-2 flex items-center justify-between ${cfg.accent}`}>
+                                    <span className="text-[11px] font-bold uppercase tracking-wide">Tổng {cfg.label.toLowerCase()}</span>
+                                    <span className="text-sm font-black tabular-nums">
+                                      {total.toLocaleString("vi-VN")} {cfg.unit}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
-              </div>
-
-              {/* Nội dung text gốc (nhat_ky_text_raw) */}
-              <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-                <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100" style={{ background: "#F8FAFC" }}>
-                  <div className="flex items-center gap-2">
-                    <FileText size={14} className="text-orange-600" />
-                    <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                      Nội dung text gốc
-                    </p>
-                  </div>
-                  <span className="text-[11px] font-semibold text-gray-400">{textRaw ? "1 đoạn" : "—"}</span>
-                </div>
-                <div className="p-5">
-                  {textRaw?.noi_dung ? (
-                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap rounded-lg p-3 border border-gray-100" style={{ background:"#F8FAFC" }}>
-                      {textRaw.noi_dung}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-gray-400 italic py-2">Báo cáo này không có nội dung text (chỉ có dữ liệu từ file Excel).</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* RIGHT: Dữ liệu AI (nhat_ky_ai_output) */}
-            <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-              <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100" style={{ background: "linear-gradient(to right, #EFF6FF, #F8FAFC)" }}>
-                <div className="flex items-center gap-2">
-                  <Sparkles size={14} className="text-blue-600" />
-                  <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                    Báo cáo phân tích AI
-                  </p>
-                </div>
-                <span className="text-[11px] font-semibold text-blue-700 bg-white px-2 py-0.5 rounded-full border border-blue-200">
-                  {aiRows.length} dòng
-                </span>
-              </div>
-              <div className="p-5">
-                {aiRows.length === 0 ? (
-                  <p className="text-sm text-gray-400 italic py-2">Chưa có dữ liệu AI cho báo cáo này.</p>
-                ) : (
-                  <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
-                    {aiRows.map((row: any, idx: number) => (
-                      <div key={row.id ?? idx} className="rounded-xl border border-gray-200 p-4 bg-white">
-                        <div className="flex items-start justify-between gap-3 mb-3 pb-3 border-b border-gray-100">
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-bold text-gray-900">
-                              #{idx + 1}. {row.ten_lo_vi_tri || row.duong_lo || "—"}
-                            </p>
-                            <p className="text-[11px] text-gray-500 mt-1 flex items-center gap-2 flex-wrap">
-                              {row.ngay && <span>{fmtDate(row.ngay)}</span>}
-                              {row.ca != null && <span className="text-gray-300">·</span>}
-                              {row.ca != null && <span>Ca {row.ca}</span>}
-                              {row.don_vi_thi_cong && <><span className="text-gray-300">·</span><span>{row.don_vi_thi_cong}</span></>}
-                              {row.nguoi_bao_cao && <><span className="text-gray-300">·</span><span>{row.nguoi_bao_cao}</span></>}
-                            </p>
-                          </div>
-                          <StatusPill status={row.tinh_trang} />
-                        </div>
-
-                        {row.cong_viec_tien_do && (
-                          <div className="mb-3">
-                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">📋 Công việc / Tiến độ</p>
-                            <p className="text-xs text-gray-700 leading-relaxed">{row.cong_viec_tien_do}</p>
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-                          <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-center">
-                            <p className="text-base font-black text-blue-700">{Number(row.san_luong_tan || 0).toLocaleString("vi-VN")}</p>
-                            <p className="text-[10px] text-blue-600 mt-0.5 font-semibold">tấn than</p>
-                          </div>
-                          <div className="rounded-lg bg-orange-50 border border-orange-100 px-3 py-2 text-center">
-                            <p className="text-base font-black text-orange-600">{Number(row.tien_do_dao_lo || 0)}</p>
-                            <p className="text-[10px] text-orange-600 mt-0.5 font-semibold">mét đào</p>
-                          </div>
-                          <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-center">
-                            <p className="text-base font-black text-gray-900">{Number(row.so_lao_dong || 0)}</p>
-                            <p className="text-[10px] text-gray-500 mt-0.5 font-semibold">lao động</p>
-                          </div>
-                          <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-center">
-                            <p className="text-sm font-bold text-gray-700 truncate" title={row.bo_tri_lao_dong}>{row.bo_tri_lao_dong || "—"}</p>
-                            <p className="text-[10px] text-gray-500 mt-0.5 font-semibold">bố trí</p>
-                          </div>
-                        </div>
-
-                        {row.ghi_chu && (
-                          <div className="text-xs text-gray-600 mb-2 px-3 py-1.5 rounded bg-gray-50 border border-gray-100">
-                            <span className="text-gray-400 font-semibold">Ghi chú:</span> {row.ghi_chu}
-                          </div>
-                        )}
-
-                        {row.noi_dung_canh_bao && !normalizeVN(row.noi_dung_canh_bao).includes("khong co") && (
-                          <div className="flex items-start gap-2 px-3 py-2 rounded-lg border" style={{ background: "#FEF2F2", borderColor: "#FECACA" }}>
-                            <AlertTriangle size={13} color="#DC2626" className="mt-0.5 flex-shrink-0" />
-                            <p className="text-xs" style={{ color: "#991B1B" }}>{row.noi_dung_canh_bao}</p>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+              );
+            })}
           </div>
-        </>
-      )}
+        )}
       </div>
+    </div>
+  );
+}
+
+// Cell hiển thị thông tin nhỏ trong panel chi tiết
+function InfoCell({ label, value, tone = "gray" }: { label: string; value: string; tone?: "gray" | "red" | "green" }) {
+  const valueClass = tone === "red"
+    ? "text-red-700"
+    : tone === "green"
+      ? "text-green-700"
+      : "text-gray-900";
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{label}</p>
+      <p className={`text-sm font-semibold mt-0.5 break-words ${valueClass}`}>{value}</p>
     </div>
   );
 }

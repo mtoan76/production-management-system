@@ -122,70 +122,44 @@ const MOBILE_LOAI_LIST: {
   { type: "xen_lo",    label: "Xén lò lũy kế",        gradient: ["#065F46", "#10B981"], accentBg: "bg-emerald-200", shadowRgba: "rgba(16,185,129,0.3)", unit: "mét", modalKey: "prog" },
   { type: "chong_doi", label: "Chống đội lũy kế",     gradient: ["#7C2D12", "#EA580C"], accentBg: "bg-orange-200",  shadowRgba: "rgba(234,88,12,0.3)",  unit: "mét", modalKey: "prog" },
 ];
-type TunnelData = {
-  duong_lo: string;
-  ngay_bao_cao: string;
-  thoi_gian_bao_cao: string;
-  san_luong_luy_ke: string;
-  tien_do_luy_ke: string;
+type CaHangMuc = {
+  id: number;
+  duong_lo: string | null;
+  loai_cong_viec: string;
+  san_luong: string | number | null;
+  tiet_dien: string | number | null;
+  tiet_dien_don_vi: string | null;
+};
+type CaData = {
+  ca: number;
+  ngay: string | null;
+  cong_truong: string | null;
+  so_lao_dong: string | number | null;
+  cong_viec_khac: string | null;
+  su_co: string | null;
+  ghi_chu: string | null;
+  hang_muc_by_type: {
+    lo_cho: CaHangMuc[];
+    dao_lo: CaHangMuc[];
+    xen_lo: CaHangMuc[];
+    chong_doi: CaHangMuc[];
+  };
 };
 type BaoCaoListItem = {
   report_id: number;
   created_at: string;
   ngay: string | null;
-  ca: number | string | null;
-  duong_lo: string | null;
-  don_vi_thi_cong: string | null;
-  nguoi_bao_cao: string | null;
-  so_dong_ai: number;
-  so_dong_duong_lo: number;
-  co_text: boolean;
-  tinh_trang: string;
+  cong_truong: string | null;
+  so_lao_dong: number | null;
+  so_ca: number;
+  tong_so_lao_dong: number;
+  co_su_co: boolean;
 };
+
 type BaoCaoDetail = {
   report: { id: number; created_at: string };
-  ai_output: any[];
-  duong_lo: any[];
-  text_raw: { report_id: number; noi_dung: string } | null;
+  ca_list: CaData[];
 };
-type CanhBaoListItem = {
-  id: number;
-  report_id: number;
-  ngay: string | null;
-  ca: number | null;
-  duong_lo: string | null;
-  vi_tri: string | null;
-  severity: string;
-  noi_dung: string;
-  mo_ta: string | null;
-  trang_thai: string;
-  nguoi_xu_ly: string | null;
-  ghi_chu_xu_ly: string | null;
-  created_at: string;
-  updated_at: string;
-};
-type ReportItem = {
-  ma_bao_cao?: string;
-  ngay?: string;
-  ca?: string | number;
-  don_vi_thi_cong?: string;
-  nguoi_bao_cao?: string;
-  so_lao_dong?: string | number;
-  san_luong?: string | number;
-  san_luong_tan?: string | number;
-  tien_do_dao_lo?: string | number;
-  dao_lo_2?: string | number;
-  xen_lo_2?: string | number;
-  bo_tri_lao_dong?: string;
-  ghi_chu?: string | number;
-  tinh_trang?: string;
-  noi_dung_canh_bao?: string;
-  [key: string]: any;
-};
-type SubmitStatus = "idle" | "processing" | "success" | "error";
-type AlertTab = "all" | "critical" | "warning" | "normal";
-type SeverityType = "Nghiêm trọng" | "Cảnh báo" | "Bình thường";
-type AlertStatus = "Mới" | "Đang xử lý" | "Chờ tiếp nhận" | "Đã hoàn thành";
 
 // ─── Cấu hình badge / severity / status ──────────────────────────────────────
 const SEVERITY_CFG: Record<SeverityType, { dot: string; badge: string; text: string; border: string }> = {
@@ -1755,6 +1729,8 @@ function ReportItemCard({ item }: { item: ReportItem }) {
 // ─── Màn hình 4: LỊCH SỬ ──────────────────────────────────────────────────────
 function MobileHistory() {
   const [search, setSearch] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [list, setList] = useState<BaoCaoListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
@@ -1762,6 +1738,7 @@ function MobileHistory() {
   const [detail, setDetail] = useState<BaoCaoDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [expandedCas, setExpandedCas] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -1769,7 +1746,13 @@ function MobileHistory() {
       setLoading(true);
       setErrorMsg("");
       try {
-        const res = await fetch(N8N_BAO_CAO_LIST_URL);
+        const params = new URLSearchParams();
+        if (fromDate) params.set("tu_ngay", fromDate);
+        if (toDate)   params.set("den_ngay", toDate);
+        if (search.trim()) params.set("cong_truong", search.trim());
+        const qs = params.toString();
+        const url = `${N8N_BAO_CAO_LIST_URL}${qs ? "?" + qs : ""}`;
+        const res = await fetch(url);
         if (!res.ok) throw new Error(`Lỗi ${res.status}`);
         const data = await res.json();
         if (cancelled) return;
@@ -1782,10 +1765,11 @@ function MobileHistory() {
     }
     load();
     return () => { cancelled = true; };
-  }, [refreshTick]);
+  }, [refreshTick, search, fromDate, toDate]);
 
   useEffect(() => {
     if (selectedId == null) { setDetail(null); return; }
+    setExpandedCas(new Set()); // reset accordion khi mở report mới
     let cancelled = false;
     async function loadDetail() {
       setDetailLoading(true);
@@ -1796,9 +1780,7 @@ function MobileHistory() {
         if (!cancelled) {
           setDetail({
             report: data.report,
-            ai_output: data.ai_output || [],
-            duong_lo: data.duong_lo || [],
-            text_raw: data.text_raw || null,
+            ca_list: Array.isArray(data.ca_list) ? data.ca_list : [],
           });
         }
       } catch {
@@ -1811,31 +1793,43 @@ function MobileHistory() {
     return () => { cancelled = true; };
   }, [selectedId]);
 
-  const filtered = list.filter(it => {
-    const q = search.trim().toLowerCase();
-    if (!q) return true;
-    return (it.duong_lo || "").toLowerCase().includes(q)
-      || (it.don_vi_thi_cong || "").toLowerCase().includes(q)
-      || (it.nguoi_bao_cao || "").toLowerCase().includes(q);
-  });
+  const caList = detail?.ca_list ?? [];
 
-  const aiRows = detail?.ai_output ?? [];
-  const duongLoRows = detail?.duong_lo ?? [];
-  const textRaw = detail?.text_raw;
-  const firstAi = aiRows[0];
-  const worstStatus = (() => {
-    const order: Record<string, number> = { "Nghiêm trọng": 3, "Cảnh báo": 2, "Bình thường": 1 };
-    let best = "Bình thường";
-    let bestRank = 1;
-    for (const r of aiRows) {
-      const t = (r.tinh_trang || "Bình thường").trim();
-      const rank = order[t] || 0;
-      if (rank > bestRank) { best = t; bestRank = rank; }
-    }
-    return best;
-  })();
+  const filtered = list;
+  const filterActive = !!(search || fromDate || toDate);
 
-  return (
+  // Format functions
+  const fmtDate = (dateStr?: string | null) => {
+    if (!dateStr) return "—";
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return dateStr;
+    return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+  };
+  const fmtDateTime = (iso: string) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    const pad2 = (n: number) => String(n).padStart(2, "0");
+    return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  };
+
+  const toggleCa = (ca: number) => {
+    setExpandedCas(prev => {
+      const next = new Set(prev);
+      next.has(ca) ? next.delete(ca) : next.add(ca);
+      return next;
+    });
+  };
+
+  // Mapping 4 loại công việc → màu sắc (đồng bộ với Desktop)
+  const TYPE_CFG: Record<string, { label: string; unit: string; gradient: [string, string]; textColor: string }> = {
+    lo_cho:    { label: "Sản lượng (lò chợ)", unit: "tấn", gradient: ["#065F46", "#10B981"], textColor: "text-emerald-700" },
+    dao_lo:    { label: "Đào lò",             unit: "mét",  gradient: ["#1E40AF", "#2563EB"], textColor: "text-blue-700" },
+    xen_lo:    { label: "Xén lò",             unit: "mét",  gradient: ["#9A3412", "#EA580C"], textColor: "text-orange-700" },
+    chong_doi: { label: "Chống đội",          unit: "mét",  gradient: ["#6B21A8", "#A855F7"], textColor: "text-purple-700" },
+  };
+
+return (
     <div className="flex flex-col flex-1 min-h-0">
       <div className="px-4 pt-4 pb-3 border-b" style={{ background: C.dark, borderColor: "rgba(255,255,255,0.08)" }}>
         <div className="font-extrabold text-slate-100 text-[17px]" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
@@ -1847,7 +1841,7 @@ function MobileHistory() {
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Tìm kiếm…"
+              placeholder="Tìm kiếm theo công trường…"
               className="flex-1 bg-transparent border-0 outline-none text-[13px] text-slate-100 placeholder:text-slate-500"
             />
           </div>
@@ -1860,10 +1854,50 @@ function MobileHistory() {
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           </button>
         </div>
+        <div className="flex items-center gap-1.5 mt-2 bg-white/5 rounded-lg border border-white/10 px-2.5 py-1.5">
+          <Calendar size={12} color="#64748B" />
+          <input
+            type="date"
+            value={fromDate}
+            onChange={e => setFromDate(e.target.value)}
+            title="Từ ngày"
+            className="bg-transparent text-[12px] text-slate-100 outline-none flex-1 min-w-0 [color-scheme:dark]"
+          />
+          <span className="text-slate-500 text-[10px]">→</span>
+          <input
+            type="date"
+            value={toDate}
+            min={fromDate || undefined}
+            onChange={e => setToDate(e.target.value)}
+            title="Đến ngày"
+            className="bg-transparent text-[12px] text-slate-100 outline-none flex-1 min-w-0 [color-scheme:dark]"
+          />
+          {(fromDate || toDate) && (
+            <button
+              onClick={() => { setFromDate(""); setToDate(""); }}
+              title="Xoá khoảng ngày"
+              className="text-slate-400 active:text-red-400 transition-colors p-1"
+              aria-label="Xoá khoảng ngày"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-hide" style={{ background: C.bg }}>
         <div className="p-3">
+          {filterActive && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 mb-3 rounded-lg bg-blue-50 border border-blue-200 text-[11px] font-semibold text-blue-700">
+              <Filter size={11} />
+              <span>
+                {filtered.length} kết quả
+                {search && ` · "${search}"`}
+                {fromDate && ` · từ ${fromDate}`}
+                {toDate && ` · đến ${toDate}`}
+              </span>
+            </div>
+          )}
           {errorMsg && (
             <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-medium rounded-lg px-3 py-2 mb-3">
               {errorMsg}
@@ -1884,30 +1918,35 @@ function MobileHistory() {
                   className="bg-white border border-slate-200 rounded-xl p-3 text-left shadow-sm active:bg-slate-50"
                 >
                   <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="bg-blue-50 text-blue-700 text-[10px] font-bold rounded-md px-1.5 py-0.5">
-                        Ca {it.ca ?? "—"}
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-bold text-slate-900 text-[13px]" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                        {fmtDate(it.ngay)}
                       </span>
-                      <HistoryStatusBadge status={it.tinh_trang} />
+                      <span className="text-slate-300">·</span>
+                      <span className="text-[12px] text-slate-700 font-semibold truncate">{it.cong_truong || "—"}</span>
                     </div>
-                    <div className="text-right text-[10px] text-slate-400 leading-tight">
+                    <div className="text-right text-[10px] text-slate-400 leading-tight flex-shrink-0">
                       <div>{datePart || "—"}</div>
                       <div>{timePart || ""}</div>
                     </div>
                   </div>
-                  <div className="font-bold text-slate-900 text-[13px]" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                    {it.duong_lo || "—"}
-                  </div>
-                  <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-500">
-                    <span>{it.don_vi_thi_cong || "—"}</span>
-                    <span>•</span>
-                    <span>{it.nguoi_bao_cao || "—"}</span>
-                  </div>
-                  {it.so_dong_ai > 1 && (
-                    <span className="inline-flex items-center mt-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                      +{it.so_dong_ai - 1} dòng
+                  <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                      <strong>{it.so_ca}</strong> ca
                     </span>
-                  )}
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-50 text-slate-700 border border-slate-200">
+                      {it.tong_so_lao_dong ?? 0} LĐ
+                    </span>
+                    {it.co_su_co ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
+                        <span className="w-1 h-1 rounded-full bg-red-500" /> Có sự cố
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-green-50 text-green-700 border border-green-200">
+                        <span className="w-1 h-1 rounded-full bg-green-500" /> Bình thường
+                      </span>
+                    )}
+                  </div>
                 </button>
               );
             })}
@@ -1921,12 +1960,12 @@ function MobileHistory() {
         </div>
       </div>
 
-      {/* Bottom sheet chi tiết */}
+      {/* Bottom sheet chi tiết — accordion theo Ca */}
       <Sheet
         open={selectedId != null}
         onClose={() => setSelectedId(null)}
         title="Chi tiết báo cáo"
-        subtitle={`#${selectedId}`}
+        subtitle={`#${selectedId} · ${caList.length} ca`}
         maxHeight="92%"
       >
         {detailLoading && (
@@ -1934,156 +1973,130 @@ function MobileHistory() {
             <Loader2 size={14} className="animate-spin" />Đang tải chi tiết…
           </div>
         )}
-        {!detailLoading && detail && (
-          <>
-            {/* Thông tin chung */}
-            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden mb-3">
-              <div className="px-3 py-2 border-b border-slate-100 bg-slate-50">
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Thông tin báo cáo</div>
-              </div>
-              <div className="grid grid-cols-2 divide-x divide-slate-100">
-                <div className="px-3 py-2.5">
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wide">Ca</div>
-                  <div className="font-bold text-slate-900 text-[13px] mt-0.5">{firstAi?.ca ?? "—"}</div>
-                </div>
-                <div className="px-3 py-2.5">
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wide">ĐV thi công</div>
-                  <div className="font-bold text-slate-900 text-[12px] mt-0.5 truncate">{firstAi?.don_vi_thi_cong || "—"}</div>
-                </div>
-                <div className="px-3 py-2.5 border-t border-slate-100">
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wide">Người BC</div>
-                  <div className="font-bold text-slate-900 text-[12px] mt-0.5 truncate">{firstAi?.nguoi_bao_cao || "—"}</div>
-                </div>
-                <div className="px-3 py-2.5 border-t border-slate-100">
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wide">Số dòng AI</div>
-                  <div className="font-bold text-blue-700 text-[13px] mt-0.5">{aiRows.length}</div>
-                </div>
-                <div className="px-3 py-2.5 border-t border-slate-100 col-span-2">
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wide">Trạng thái</div>
-                  <div className="mt-1"><HistoryStatusBadge status={worstStatus} /></div>
-                </div>
-              </div>
-            </div>
+        {!detailLoading && detail && caList.length === 0 && (
+          <div className="text-xs text-slate-400 italic py-10 text-center">
+            Báo cáo này chưa có dữ liệu ca nào.
+          </div>
+        )}
+        {!detailLoading && caList.length > 0 && (
+          <div className="flex flex-col gap-2.5">
+            {caList.map((ca, idx) => {
+              const isOpen = expandedCas.has(ca.ca);
+              const s = (ca.su_co || "").trim();
+              const isInc = s && !s.toLowerCase().includes("bình thường") && !s.toLowerCase().includes("không có sự cố");
+              return (
+                <div key={ca.ca ?? idx} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                  <button
+                    onClick={() => toggleCa(ca.ca)}
+                    className="w-full flex items-center justify-between px-3 py-3 active:bg-slate-50"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                      <span className="inline-flex items-center justify-center min-w-[40px] px-2.5 py-1 rounded-lg text-[11px] font-bold text-white" style={{ background: "linear-gradient(135deg,#1E40AF,#2563EB)" }}>
+                        Ca {ca.ca}
+                      </span>
+                      <span className="text-[12px] font-bold text-slate-900">{fmtDate(ca.ngay)}</span>
+                      {isInc ? (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
+                          <span className="w-1 h-1 rounded-full bg-red-500" /> Sự cố
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-green-50 text-green-700 border border-green-200">
+                          <span className="w-1 h-1 rounded-full bg-green-500" /> BT
+                        </span>
+                      )}
+                      <span className="text-[10px] text-slate-500">· {Number(ca.so_lao_dong) || 0} LĐ</span>
+                    </div>
+                    <ChevronDown size={16} className={`text-slate-400 flex-shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                  </button>
 
-            {/* Dữ liệu Excel */}
-            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden mb-3">
-              <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
-                <FileText size={12} className="text-blue-600" />
-                <div className="text-[10px] font-bold text-slate-700 uppercase tracking-wider flex-1">Dữ liệu file Excel</div>
-                <span className="text-[10px] font-semibold text-slate-400">{duongLoRows.length} dòng</span>
-              </div>
-              <div className="p-2.5">
-                {duongLoRows.length === 0 ? (
-                  <div className="text-[11px] text-slate-400 italic py-1">Báo cáo này không có dữ liệu Excel.</div>
-                ) : (
-                  <div className="space-y-1.5 max-h-[180px] overflow-y-auto scrollbar-hide">
-                    {duongLoRows.map((r: any) => (
-                      <div key={r.id} className="rounded-md border border-slate-100 p-2 bg-slate-50">
-                        <div className="flex items-center gap-1.5 flex-wrap mb-1.5 text-[10px]">
-                          <span className="font-bold text-slate-800">{fmtDate(r.ngay)}</span>
-                          <span className="text-slate-400">·</span>
-                          <span className="text-slate-600">Ca {r.ca ?? "—"}</span>
-                          {r.duong_lo && (
-                            <>
-                              <span className="text-slate-400">·</span>
-                              <span className="font-bold text-blue-700">{r.duong_lo}</span>
-                            </>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-5 gap-1 text-center text-[9px]">
-                          <div className="bg-white rounded p-1"><div className="font-bold text-blue-700">{Number(r.san_luong_than || 0).toLocaleString("vi-VN")}</div><div className="text-slate-400">SL(t)</div></div>
-                          <div className="bg-white rounded p-1"><div className="font-bold text-slate-900">{Number(r.dao_lo_thuc_hien_m || 0)}</div><div className="text-slate-400">Đào(m)</div></div>
-                          <div className="bg-white rounded p-1"><div className="font-bold text-slate-900">{Number(r.xen_lo_thuc_hien_m || 0)}</div><div className="text-slate-400">Xén(m)</div></div>
-                          <div className="bg-white rounded p-1"><div className="font-bold text-slate-900">{Number(r.chong_thuc_hien_m || 0)}</div><div className="text-slate-400">Chống(m)</div></div>
-                          <div className="bg-white rounded p-1"><div className="font-bold text-amber-600">{Number(r.khau_lo_thuc_hien_m || 0)}</div><div className="text-slate-400">Khấu(m)</div></div>
-                        </div>
+                  {isOpen && (
+                    <div className="border-t border-slate-100 px-3 py-3 flex flex-col gap-3" style={{ background: "#FAFBFC" }}>
+                      <div className="grid grid-cols-2 gap-2">
+                        <InfoCell label="Ngày" value={fmtDate(ca.ngay)} />
+                        <InfoCell label="Công trường" value={ca.cong_truong || "—"} />
+                        <InfoCell label="Số lao động" value={`${Number(ca.so_lao_dong) || 0} người`} />
+                        <InfoCell label="Trạng thái" value={isInc ? "Có sự cố" : "Bình thường"} tone={isInc ? "red" : "green"} />
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
 
-            {/* Text raw */}
-            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden mb-3">
-              <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
-                <FileText size={12} className="text-amber-600" />
-                <div className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Nội dung text gốc</div>
-              </div>
-              <div className="p-3">
-                {textRaw?.noi_dung ? (
-                  <p className="text-[12px] text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 rounded-md p-2 border border-slate-100">
-                    {textRaw.noi_dung}
-                  </p>
-                ) : (
-                  <div className="text-[11px] text-slate-400 italic">Báo cáo này không có nội dung text.</div>
-                )}
-              </div>
-            </div>
+                      {(ca.cong_viec_khac || ca.su_co || ca.ghi_chu) && (
+                        <div className="flex flex-col gap-2">
+                          {ca.cong_viec_khac && <InfoCell label="Công việc khác" value={ca.cong_viec_khac} />}
+                          {ca.su_co && <InfoCell label="Sự cố" value={ca.su_co} tone={isInc ? "red" : "gray"} />}
+                          {ca.ghi_chu && <InfoCell label="Ghi chú" value={ca.ghi_chu} />}
+                        </div>
+                      )}
 
-            {/* AI Output */}
-            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-              <div className="px-3 py-2 border-b border-slate-100 flex items-center gap-2" style={{ background: "linear-gradient(to right,#EFF6FF,#F8FAFC)" }}>
-                <Sparkles size={12} className="text-blue-600" />
-                <div className="text-[10px] font-bold text-slate-700 uppercase tracking-wider flex-1">Báo cáo phân tích AI</div>
-                <span className="text-[10px] font-bold text-blue-700 bg-white px-1.5 py-0.5 rounded-full border border-blue-200">
-                  {aiRows.length} dòng
-                </span>
-              </div>
-              <div className="p-2.5">
-                {aiRows.length === 0 ? (
-                  <div className="text-[11px] text-slate-400 italic py-1">Chưa có dữ liệu AI.</div>
-                ) : (
-                  <div className="space-y-2.5 max-h-[220px] overflow-y-auto scrollbar-hide">
-                    {aiRows.map((row: any, idx: number) => (
-                      <div key={row.id ?? idx} className="rounded-lg border border-slate-200 p-2.5 bg-white">
-                        <div className="flex items-start justify-between gap-2 mb-2 pb-2 border-b border-slate-100">
-                          <div className="min-w-0 flex-1">
-                            <p className="font-bold text-slate-900 text-[12px]">#{idx + 1}. {row.ten_lo_vi_tri || row.duong_lo || "—"}</p>
-                            <p className="text-[10px] text-slate-500 mt-0.5">
-                              {fmtDate(row.ngay)} · Ca {row.ca ?? "—"} · {row.don_vi_thi_cong || "—"} · {row.nguoi_bao_cao || "—"}
-                            </p>
-                          </div>
-                          <StatusPill status={row.tinh_trang} />
-                        </div>
-                        <div className="grid grid-cols-4 gap-1">
-                          <div className="bg-blue-50 border border-blue-100 rounded p-1.5 text-center">
-                            <div className="font-extrabold text-blue-700 text-[12px]">{Number(row.san_luong_tan || 0).toLocaleString("vi-VN")}</div>
-                            <div className="text-[8px] text-blue-600 font-bold mt-0.5">tấn than</div>
-                          </div>
-                          <div className="bg-amber-50 border border-amber-100 rounded p-1.5 text-center">
-                            <div className="font-extrabold text-amber-600 text-[12px]">{Number(row.tien_do_dao_lo || 0)}</div>
-                            <div className="text-[8px] text-amber-600 font-bold mt-0.5">mét đào</div>
-                          </div>
-                          <div className="bg-slate-50 border border-slate-200 rounded p-1.5 text-center">
-                            <div className="font-extrabold text-slate-900 text-[12px]">{Number(row.so_lao_dong || 0)}</div>
-                            <div className="text-[8px] text-slate-500 font-bold mt-0.5">lao động</div>
-                          </div>
-                          <div className="bg-slate-50 border border-slate-200 rounded p-1.5 text-center">
-                            <div className="font-bold text-slate-700 text-[10px] truncate" title={row.bo_tri_lao_dong}>{row.bo_tri_lao_dong || "—"}</div>
-                            <div className="text-[8px] text-slate-500 font-bold mt-0.5">bố trí</div>
-                          </div>
-                        </div>
-                        {row.ghi_chu && (
-                          <div className="text-[11px] text-slate-600 mt-2 px-2 py-1 rounded bg-slate-50 border border-slate-100">
-                            <span className="text-slate-400 font-bold">Ghi chú:</span> {row.ghi_chu}
-                          </div>
-                        )}
-                        {row.noi_dung_canh_bao && !normalizeVN(row.noi_dung_canh_bao).includes("khong co") && (
-                          <div className="flex items-start gap-1.5 px-2 py-1.5 rounded-md mt-1.5" style={{ background: "#FEF2F2", border: "1px solid #FECACA" }}>
-                            <AlertTriangle size={11} className="text-red-600 mt-0.5 flex-shrink-0" />
-                            <p className="text-[11px] text-red-900">{row.noi_dung_canh_bao}</p>
-                          </div>
-                        )}
+                      <div className="flex flex-col gap-2">
+                        {(["lo_cho", "dao_lo", "xen_lo", "chong_doi"] as const).map(type => {
+                          const cfg = TYPE_CFG[type];
+                          const items = (ca.hang_muc_by_type?.[type] as any[]) || [];
+                          const total = items.reduce((sum, h) => sum + (Number(h.san_luong) || 0), 0);
+                          return (
+                            <div key={type} className="rounded-lg border border-slate-200 overflow-hidden bg-white">
+                              <div
+                                className="flex items-center justify-between px-3 py-2"
+                                style={{ background: `linear-gradient(135deg, ${cfg.gradient[0]}, ${cfg.gradient[1]})` }}
+                              >
+                                <div className="flex items-center gap-1.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-white/80" />
+                                  <span className="text-[12px] font-bold text-white">{cfg.label}</span>
+                                </div>
+                                <span className="text-[10px] font-semibold text-white/90 bg-white/15 px-1.5 py-0.5 rounded-full border border-white/20">
+                                  {items.length} mục · {cfg.unit}
+                                </span>
+                              </div>
+                              {items.length === 0 ? (
+                                <p className="text-[11px] text-slate-400 italic px-3 py-2">Không có hạng mục trong ca này.</p>
+                              ) : (
+                                <div className="divide-y divide-slate-100">
+                                  {items.map(h => (
+                                    <div key={h.id} className="px-3 py-2">
+                                      <p className="text-[12px] font-semibold text-slate-900 truncate" title={h.duong_lo || ""}>
+                                        {h.duong_lo || "—"}
+                                      </p>
+                                      <div className="flex items-center justify-between mt-0.5">
+                                        {h.tiet_dien ? (
+                                          <p className="text-[10px] text-slate-500">
+                                            TD: <strong className="text-slate-700">{Number(h.tiet_dien).toLocaleString("vi-VN")}</strong> {h.tiet_dien_don_vi || "m²"}
+                                          </p>
+                                        ) : <span />}
+                                        <p className={`text-[13px] font-black tabular-nums ${cfg.textColor}`}>
+                                          {Number(h.san_luong || 0).toLocaleString("vi-VN")} <span className="text-[10px] font-medium text-slate-400">{cfg.unit}</span>
+                                        </p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                  <div className="px-3 py-1.5 bg-slate-50 flex items-center justify-between">
+                                    <span className="text-[10px] font-bold uppercase tracking-wide text-slate-600">Tổng</span>
+                                    <span className="text-[12px] font-black tabular-nums text-slate-900">
+                                      {total.toLocaleString("vi-VN")} {cfg.unit}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </Sheet>
+    </div>
+  );
+}
+
+// Cell hiển thị thông tin nhỏ (dùng trong Mobile sheet)
+function InfoCell({ label, value, tone = "gray" }: { label: string; value: string; tone?: "gray" | "red" | "green" }) {
+  const valueClass = tone === "red" ? "text-red-700" : tone === "green" ? "text-green-700" : "text-slate-900";
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
+      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
+      <p className={`text-[12px] font-semibold mt-0.5 break-words ${valueClass}`}>{value}</p>
     </div>
   );
 }
@@ -2340,3 +2353,5 @@ export default function MobileApp() {
     </div>
   );
 }
+
+

@@ -234,4 +234,137 @@ router.get("/cong-truong", async (req, res, next) => {
   }
 });
 
+// ─── Helper chung: map tên site đã được frontend simplify về tên gốc trong DB ──
+// Frontend hiển thị "1" thay vì "CT Khai thác 1", "Đào lò 1" thay vì "CT Đào lò 1"
+// → backend cần reverse map để query đúng `cong_truong`
+function resolveSiteName(siteParam, type) {
+  const s = (siteParam || "").trim();
+  if (!s) return "";
+  if (type === "khai_thac") {
+    if (s.startsWith("Cơ giới hóa")) return s;
+    if (/^\d+$/.test(s)) return `CT Khai thác ${s}`;
+    return s;
+  }
+  if (type === "dao_lo") {
+    if (s.startsWith("Đào lò ")) return `CT ${s}`;
+    return s;
+  }
+  return s;
+}
+
+// GET /api/cong-truong-chi-tiet?thang=X&nam=Y&site=TEN_DA_SIMPLIFY&type=khai_thac|dao_lo
+// Trả về danh sách đường lò × loại công việc trong 1 công trường:
+//   - daoLo / xenLo / chongDoi: mỗi mảng gồm { duong_lo, tiet_dien, tien_do, ca1, ca2, ca3 }
+//   - tiet_dien: hiện trả null (chưa có cột trong DB) → frontend hiển thị "—"
+//   - tien_do: lũy kế tháng (mét)
+//   - ca1/ca2/ca3: tổng mét trong tháng theo từng ca
+router.get("/cong-truong-chi-tiet", async (req, res, next) => {
+  try {
+    const now = new Date();
+    const thang = clampMonth(req.query.thang, now.getMonth() + 1);
+    const nam   = clampYear(req.query.nam, now.getFullYear());
+    const type  = req.query.type === "dao_lo" ? "dao_lo" : "khai_thac";
+    const siteParam = req.query.site;
+    if (!siteParam) {
+      return res.status(400).json({ error: "Missing required query param: site" });
+    }
+
+    const originalSite = resolveSiteName(siteParam, type);
+    const validSites = type === "khai_thac" ? KHAI_THAC_SITES : DAO_LO_SITES;
+    if (!validSites.includes(originalSite)) {
+      return res.json({
+        data: { daoLo: [], xenLo: [], chongDoi: [] },
+        thang, nam, site: originalSite, type,
+      });
+    }
+
+    const query = `
+      WITH filtered AS (
+        SELECT
+          bcct.ngay,
+          bcct.ca,
+          bch.duong_lo,
+          bch.loai_cong_viec,
+          bch.san_luong,
+          bch.tiet_dien
+        FROM bao_cao_hang_muc bch
+        JOIN bao_cao_cong_truong bcct ON bcct.id = bch.bao_cao_cong_truong_id
+        WHERE bcct.cong_truong = $1
+          AND EXTRACT(YEAR  FROM bcct.ngay) = $3
+          AND EXTRACT(MONTH FROM bcct.ngay) = $2
+          AND bch.duong_lo IS NOT NULL
+          AND bch.loai_cong_viec IN ('dao_lo', 'xen_lo', 'chong_doi')
+      ),
+      daily AS (
+        SELECT duong_lo, loai_cong_viec, ngay,
+               SUM(san_luong)::numeric AS val
+        FROM filtered
+        GROUP BY duong_lo, loai_cong_viec, ngay
+      ),
+      cumulative AS (
+        SELECT duong_lo, loai_cong_viec, ngay, val,
+               SUM(val) OVER (PARTITION BY duong_lo, loai_cong_viec ORDER BY ngay) AS tien_do,
+               ROW_NUMBER() OVER (PARTITION BY duong_lo, loai_cong_viec ORDER BY ngay DESC) AS rn
+        FROM daily
+      ),
+      tiet_dien_pick AS (
+        SELECT DISTINCT ON (duong_lo, loai_cong_viec)
+          duong_lo,
+          loai_cong_viec,
+          tiet_dien
+        FROM filtered
+        WHERE tiet_dien IS NOT NULL
+        ORDER BY duong_lo, loai_cong_viec, ngay DESC
+      ),
+      per_ca AS (
+        SELECT duong_lo, loai_cong_viec,
+               COALESCE(SUM(san_luong) FILTER (WHERE ca = 1), 0)::numeric AS ca1,
+               COALESCE(SUM(san_luong) FILTER (WHERE ca = 2), 0)::numeric AS ca2,
+               COALESCE(SUM(san_luong) FILTER (WHERE ca = 3), 0)::numeric AS ca3
+        FROM filtered
+        GROUP BY duong_lo, loai_cong_viec
+      )
+      SELECT
+        c.duong_lo,
+        c.loai_cong_viec,
+        c.tien_do,
+        p.ca1,
+        p.ca2,
+        p.ca3,
+        td.tiet_dien
+      FROM cumulative c
+      JOIN per_ca p
+        ON p.duong_lo = c.duong_lo
+       AND p.loai_cong_viec = c.loai_cong_viec
+      LEFT JOIN tiet_dien_pick td
+        ON td.duong_lo = c.duong_lo
+       AND td.loai_cong_viec = c.loai_cong_viec
+      WHERE c.rn = 1
+      ORDER BY c.loai_cong_viec, c.duong_lo;
+    `;
+
+    const result = await pool.query(query, [originalSite, thang, nam]);
+
+    const toTunnel = (r) => ({
+      duong_lo: r.duong_lo,
+      tiet_dien: r.tiet_dien !== null && r.tiet_dien !== undefined ? Number(r.tiet_dien) : null,
+      tien_do: Number(r.tien_do) || 0,
+      ca1: Number(r.ca1) || 0,
+      ca2: Number(r.ca2) || 0,
+      ca3: Number(r.ca3) || 0,
+    });
+
+    const daoLo    = result.rows.filter((r) => r.loai_cong_viec === "dao_lo").map(toTunnel);
+    const xenLo    = result.rows.filter((r) => r.loai_cong_viec === "xen_lo").map(toTunnel);
+    const chongDoi = result.rows.filter((r) => r.loai_cong_viec === "chong_doi").map(toTunnel);
+
+    res.json({
+      data: { daoLo, xenLo, chongDoi },
+      thang, nam, site: originalSite, type,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

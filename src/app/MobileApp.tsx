@@ -32,6 +32,10 @@ const N8N_CANH_BAO_LIST_URL =
 const N8N_CONG_TRUONG_URL =
   (import.meta as any)?.env?.VITE_N8N_CONG_TRUONG_URL || "/api/cong-truong";
 
+// URL lấy danh sách đường lò chi tiết (tiết diện + mét theo ca) cho từng công trường
+const N8N_CONG_TRUONG_CHITIET_URL =
+  (import.meta as any)?.env?.VITE_N8N_CONG_TRUONG_CHITIET_URL || "/api/cong-truong-chi-tiet";
+
 // ─── VN date parser (API trả "DD/MM/YYYY HH:MM:SS" - JS Date() không parse được) ──
 function parseVNDate(s: string | null | undefined): Date | null {
   if (!s) return null;
@@ -115,12 +119,12 @@ const MOBILE_LOAI_LIST: {
   accentBg: string;
   shadowRgba: string;
   unit: string;
-  modalKey: "prod" | "prog";
+  modalKey: "lo_cho" | "dao_lo" | "xen_lo" | "chong_doi";
 }[] = [
-  { type: "lo_cho",    label: "Sản lượng lũy kế",    gradient: ["#1E40AF", "#2563EB"], accentBg: "bg-blue-200",   shadowRgba: "rgba(37,99,235,0.3)",  unit: "tấn", modalKey: "prod" },
-  { type: "dao_lo",    label: "Tiến độ đào lò lũy kế", gradient: ["#92400E", "#D97706"], accentBg: "bg-amber-200",  shadowRgba: "rgba(217,119,6,0.3)", unit: "mét", modalKey: "prog" },
-  { type: "xen_lo",    label: "Xén lò lũy kế",        gradient: ["#065F46", "#10B981"], accentBg: "bg-emerald-200", shadowRgba: "rgba(16,185,129,0.3)", unit: "mét", modalKey: "prog" },
-  { type: "chong_doi", label: "Chống đội lũy kế",     gradient: ["#7C2D12", "#EA580C"], accentBg: "bg-orange-200",  shadowRgba: "rgba(234,88,12,0.3)",  unit: "mét", modalKey: "prog" },
+  { type: "lo_cho",    label: "Sản lượng lũy kế",    gradient: ["#1E40AF", "#2563EB"], accentBg: "bg-blue-200",   shadowRgba: "rgba(37,99,235,0.3)",  unit: "tấn", modalKey: "lo_cho" },
+  { type: "dao_lo",    label: "Tiến độ đào lò lũy kế", gradient: ["#92400E", "#D97706"], accentBg: "bg-amber-200",  shadowRgba: "rgba(217,119,6,0.3)", unit: "mét", modalKey: "dao_lo" },
+  { type: "xen_lo",    label: "Xén lò lũy kế",        gradient: ["#065F46", "#10B981"], accentBg: "bg-emerald-200", shadowRgba: "rgba(16,185,129,0.3)", unit: "mét", modalKey: "xen_lo" },
+  { type: "chong_doi", label: "Chống đội lũy kế",     gradient: ["#7C2D12", "#EA580C"], accentBg: "bg-orange-200",  shadowRgba: "rgba(234,88,12,0.3)",  unit: "mét", modalKey: "chong_doi" },
 ];
 type CaHangMuc = {
   id: number;
@@ -144,6 +148,20 @@ type CaData = {
     xen_lo: CaHangMuc[];
     chong_doi: CaHangMuc[];
   };
+};
+// Chi tiết đường lò trong 1 công trường (dùng cho bảng drill-down bên trong popup công trường)
+type TunnelChiTiet = {
+  duong_lo: string;
+  tiet_dien?: number;
+  tien_do: number;
+  ca1: number;
+  ca2: number;
+  ca3: number;
+};
+type CongTruongChiTiet = {
+  daoLo: TunnelChiTiet[];
+  xenLo: TunnelChiTiet[];
+  chongDoi: TunnelChiTiet[];
 };
 type BaoCaoListItem = {
   report_id: number;
@@ -458,10 +476,42 @@ function MobileOverview({
   const [alerts, setAlerts] = useState<CanhBaoListItem[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
   // State cho chart modal + dữ liệu đường lò
-  const [chartModalOpen, setChartModalOpen] = useState<null | "prod" | "prog">(null);
+  const [chartModalOpen, setChartModalOpen] = useState<null | "lo_cho" | "dao_lo" | "xen_lo" | "chong_doi">(null);
   const [tunnelRows, setTunnelRows] = useState<any[]>([]);
   // State cho modal công trường
   const [congTruongModalOpen, setCongTruongModalOpen] = useState<null | { site: any; type: "khai_thac" | "dao_lo" }>(null);
+  // Drill-down: bảng đường lò bên trong popup công trường + modal chi tiết 1 đường lò
+  const [congTruongChiTiet, setCongTruongChiTiet] = useState<CongTruongChiTiet | null>(null);
+  const [loadingCongTruongChiTiet, setLoadingCongTruongChiTiet] = useState(false);
+  const [tunnelDetailModal, setTunnelDetailModal] = useState<null | {
+    duong_lo: string;
+    loaiCongViec: string;
+    row: TunnelChiTiet;
+  }>(null);
+
+  useEffect(() => {
+    if (!congTruongModalOpen) {
+      setCongTruongChiTiet(null);
+      setTunnelDetailModal(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingCongTruongChiTiet(true);
+    fetch(`${N8N_CONG_TRUONG_CHITIET_URL}?thang=${month}&nam=${year}&site=${encodeURIComponent(congTruongModalOpen.site.tenCongTruong)}&type=${congTruongModalOpen.type}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (cancelled) return;
+        const d = data?.data || data || null;
+        setCongTruongChiTiet(d && typeof d === "object" ? {
+          daoLo: Array.isArray(d.daoLo) ? d.daoLo : [],
+          xenLo: Array.isArray(d.xenLo) ? d.xenLo : [],
+          chongDoi: Array.isArray(d.chongDoi) ? d.chongDoi : [],
+        } : null);
+      })
+      .catch(() => { if (!cancelled) setCongTruongChiTiet(null); })
+      .finally(() => { if (!cancelled) setLoadingCongTruongChiTiet(false); });
+    return () => { cancelled = true; };
+  }, [congTruongModalOpen, month, year]);
 
   useEffect(() => {
     let cancelled = false;
@@ -656,13 +706,19 @@ function MobileOverview({
   const tbXenLoNgay = remainingDaysPeriod > 0 ? conLaiXenLo / remainingDaysPeriod : 0;
   const tbChongDoiNgay = remainingDaysPeriod > 0 ? conLaiChongDoi / remainingDaysPeriod : 0;
 
-  // Dữ liệu 2 biểu đồ: thay đổi nguồn theo viewMode (mobile giữ chart cho prod/prog)
-  const chartProd = viewMode === "month"
+  // Dữ liệu biểu đồ cho 4 loại KPI: thay đổi nguồn theo viewMode
+  const chartLoCho = viewMode === "month"
     ? monthList.map(m => ({ day: `T${m.thang}`, value: Number(m.lo_cho_luy_ke) || 0 }))
     : daySummary.map(d => ({ day: d.ngay, value: Number(d.lo_cho_luy_ke) || 0 }));
-  const chartProg = viewMode === "month"
+  const chartDaoLo = viewMode === "month"
     ? monthList.map(m => ({ day: `T${m.thang}`, value: Number(m.dao_lo_luy_ke) || 0 }))
     : daySummary.map(d => ({ day: d.ngay, value: Number(d.dao_lo_luy_ke) || 0 }));
+  const chartXenLo = viewMode === "month"
+    ? monthList.map(m => ({ day: `T${m.thang}`, value: Number(m.xen_lo_luy_ke) || 0 }))
+    : daySummary.map(d => ({ day: d.ngay, value: Number(d.xen_lo_luy_ke) || 0 }));
+  const chartChongDoi = viewMode === "month"
+    ? monthList.map(m => ({ day: `T${m.thang}`, value: Number(m.chong_doi_luy_ke) || 0 }))
+    : daySummary.map(d => ({ day: d.ngay, value: Number(d.chong_doi_luy_ke) || 0 }));
 
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const years = [2024, 2025, 2026, 2027];
@@ -975,7 +1031,15 @@ function MobileOverview({
             <div className="flex items-center justify-between px-5 pb-3">
               <div>
                 <h2 className="font-bold text-slate-900 text-base" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                  {chartModalOpen === "prod" ? "Biểu đồ sản lượng" : "Biểu đồ tiến độ đào lò"}
+                  {(() => {
+                    const labels: Record<string, string> = {
+                      lo_cho: "Biểu đồ sản lượng (lũy kế)",
+                      dao_lo: "Biểu đồ đào lò (lũy kế)",
+                      xen_lo: "Biểu đồ xén lò (lũy kế)",
+                      chong_doi: "Biểu đồ chống đội (lũy kế)",
+                    };
+                    return labels[chartModalOpen!] || "Biểu đồ";
+                  })()}
                 </h2>
                 <p className="text-[10px] text-slate-500">
                   {viewMode === "month" ? "Theo tháng trong năm" : "Theo ngày trong tháng"} · {viewMode === "month" ? `Năm ${year}` : `Tháng ${month}/${year}`}
@@ -989,34 +1053,27 @@ function MobileOverview({
               </button>
             </div>
             <div className="px-3 pb-5">
-              {chartModalOpen === "prod" ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={chartProd} margin={{ top: 20, right: 8, bottom: 0, left: -8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: C.muted }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: C.muted }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<ProductionTooltip />} cursor={{ fill: "rgba(37,99,235,0.04)" }} />
-                    <Bar dataKey="value" fill={C.primary} radius={[3, 3, 0, 0]} maxBarSize={viewMode === "month" ? 24 : 20} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={chartProg} margin={{ top: 20, right: 8, bottom: 0, left: -8 }}>
-                    <defs>
-                      <linearGradient id="mobileOrangeGradModal" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={C.warning} stopOpacity={0.25} />
-                        <stop offset="95%" stopColor={C.warning} stopOpacity={0.01} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: C.muted }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: C.muted }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<ProgressTooltip />} />
-                    <Area type="monotone" dataKey="value" stroke={C.warning} strokeWidth={2}
-                      fill="url(#mobileOrangeGradModal)" dot={{ r: 2.5, fill: C.warning }} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              )}
+              {(() => {
+                const cfg: Record<string, { data: { day: string; value: number }[]; color: string; unitLabel: string }> = {
+                  lo_cho:    { data: chartLoCho,    color: C.primary,  unitLabel: "tấn" },
+                  dao_lo:    { data: chartDaoLo,    color: C.warning,  unitLabel: "mét" },
+                  xen_lo:    { data: chartXenLo,    color: "#10B981",  unitLabel: "mét" },
+                  chong_doi: { data: chartChongDoi, color: "#EA580C",  unitLabel: "mét" },
+                };
+                const cur = cfg[chartModalOpen!] || cfg.lo_cho;
+                const TooltipEl = cur.unitLabel === "tấn" ? ProductionTooltip : ProgressTooltip;
+                return (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={cur.data} margin={{ top: 20, right: 8, bottom: 0, left: -8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                      <XAxis dataKey="day" tick={{ fontSize: 10, fill: C.muted }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: C.muted }} axisLine={false} tickLine={false} />
+                      <Tooltip content={<TooltipEl />} cursor={{ fill: "rgba(37,99,235,0.04)" }} />
+                      <Bar dataKey="value" fill={cur.color} radius={[3, 3, 0, 0]} maxBarSize={viewMode === "month" ? 24 : 20} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -1038,10 +1095,10 @@ function MobileOverview({
             </div>
             <div className="flex items-center justify-between px-5 pb-3 border-b border-slate-200 flex-shrink-0">
               <div>
-                <h2 className="font-bold text-slate-900 text-base" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                <h2 className="font-bold text-slate-900 text-xl" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
                   Chi tiết: {congTruongModalOpen.site.tenCongTruong} ({congTruongModalOpen.type === "khai_thac" ? "Khai thác" : "Đào lò"})
                 </h2>
-                <p className="text-[10px] text-slate-500">
+                <p className="text-sm text-slate-600 mt-1 font-medium">
                   Tháng {month}/{year} · Cập nhật: {congTruongModalOpen.site.thoiGianBaoCao}
                 </p>
               </div>
@@ -1049,11 +1106,11 @@ function MobileOverview({
                 onClick={() => setCongTruongModalOpen(null)}
                 className="p-2 rounded-lg hover:bg-slate-100 flex-shrink-0"
               >
-                <X size={18} />
+                <X size={20} />
               </button>
             </div>
             <div className="px-3 pb-5">
-              <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="grid grid-cols-2 gap-3 mb-5">
                 {(() => {
                   const site = congTruongModalOpen.site;
                   const isKhaiThac = congTruongModalOpen.type === "khai_thac";
@@ -1070,29 +1127,164 @@ function MobileOverview({
                         { label: "Mét chống đội (lũy kế)", value: site.chong_doi, unit: "mét", keHoach: keHoachThang.chong_doi, conLai: site.conLai?.chong_doi, tbNgay: site.tbNgay?.chong_doi },
                       ];
                   return items.map((item, idx) => (
-                    <div key={idx} className="bg-slate-50 rounded-xl border border-slate-200 p-3">
-                      <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">{item.label}</p>
-                      <div className="text-[24px] font-extrabold text-slate-900 leading-none">
+                    <div key={idx} className="bg-slate-50 rounded-xl border-2 border-slate-200 p-4">
+                      <p className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-1.5">{item.label}</p>
+                      <div className="text-[34px] font-black text-slate-900 leading-none">
                         {Math.round(item.value).toLocaleString("vi-VN")}
-                        <span className="text-sm font-medium ml-1 opacity-60">{item.unit}</span>
+                        <span className="text-base font-bold ml-1.5 opacity-70">{item.unit}</span>
                       </div>
-                      <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-slate-200 text-[10px]">
+                      <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t-2 border-slate-200 text-sm">
                         <div className="text-center">
-                          <div className="text-slate-400">KH tháng</div>
-                          <div className="font-semibold text-blue-700">{Math.round(item.keHoach).toLocaleString("vi-VN")} {item.unit}</div>
+                          <div className="text-slate-500 font-bold mb-1">KH tháng</div>
+                          <div className="font-extrabold text-blue-700 text-base">{Math.round(item.keHoach).toLocaleString("vi-VN")}<span className="text-xs font-bold ml-0.5">{item.unit}</span></div>
                         </div>
                         <div className="text-center">
-                          <div className="text-slate-400">Còn thiếu</div>
-                          <div className="font-semibold text-red-600">{Math.round(item.conLai || 0).toLocaleString("vi-VN")} {item.unit}</div>
+                          <div className="text-slate-500 font-bold mb-1">Còn thiếu</div>
+                          <div className="font-extrabold text-red-600 text-base">{Math.round(item.conLai || 0).toLocaleString("vi-VN")}<span className="text-xs font-bold ml-0.5">{item.unit}</span></div>
                         </div>
                         <div className="text-center">
-                          <div className="text-slate-400">TB/ngày ({remainingDays} ng)</div>
-                          <div className="font-semibold text-orange-600">{Math.round(item.tbNgay || 0).toLocaleString("vi-VN")} {item.unit}</div>
+                          <div className="text-slate-500 font-bold mb-1">TB/ngày ({remainingDays} ng)</div>
+                          <div className="font-extrabold text-orange-600 text-base">{Math.round(item.tbNgay || 0).toLocaleString("vi-VN")}<span className="text-xs font-bold ml-0.5">{item.unit}</span></div>
                         </div>
                       </div>
                     </div>
                   ));
                 })()}
+              </div>
+
+              {/* Bảng drill-down: danh sách đường lò trong công trường */}
+              <div className="border-t-2 border-slate-200 pt-4">
+                <h3 className="text-base font-black text-slate-900 mb-3" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                  Danh sách đường lò trong công trường {congTruongModalOpen.type === "khai_thac" ? "Khai thác" : "Đào lò"} {congTruongModalOpen.site.tenCongTruong}
+                </h3>
+                {loadingCongTruongChiTiet ? (
+                  <div className="text-center py-4 text-sm text-slate-500 font-medium">Đang tải dữ liệu đường lò...</div>
+                ) : !congTruongChiTiet ? (
+                  <div className="text-center py-4 text-sm text-slate-400">Chưa có dữ liệu đường lò cho công trường này.</div>
+                ) : (() => {
+                    const groups = [
+                      { key: "daoLo"    as const, label: "Lò đào",      color: "#D97706", bgHeader: "#FEF3C7", rows: congTruongChiTiet.daoLo,    showTietDien: true  },
+                      { key: "xenLo"    as const, label: "Lò xén",      color: "#10B981", bgHeader: "#D1FAE5", rows: congTruongChiTiet.xenLo,    showTietDien: true  },
+                      { key: "chongDoi" as const, label: "Lò chống đội", color: "#EA580C", bgHeader: "#FFEDD5", rows: congTruongChiTiet.chongDoi, showTietDien: false },
+                    ];
+                    const maxRows = Math.max(...groups.map(g => g.rows.length));
+                    const total = groups.reduce((s, g) => s + g.rows.length, 0);
+                    if (total === 0) {
+                      return <div className="text-center py-4 text-sm text-slate-400">Công trường này chưa có đường lò nào trong tháng.</div>;
+                    }
+                    return (
+                      <div className="rounded-xl border-2 border-slate-200 overflow-hidden">
+                        <table className="w-full text-sm table-fixed">
+                          <thead>
+                            <tr>
+                              {groups.map(g => (
+                                <th key={g.key} className="px-2 py-2.5 text-center font-black text-sm" style={{ background: g.bgHeader, color: g.color, width: "33.33%" }}>
+                                  {g.label} <span className="font-bold opacity-70 text-xs">({g.rows.length})</span>
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Array.from({ length: maxRows }).map((_, idx) => (
+                              <tr key={idx} className="border-t border-slate-100">
+                                {groups.map(g => {
+                                  const row = g.rows[idx];
+                                  return (
+                                    <td key={g.key} className="px-2 py-2.5 text-center align-middle">
+                                      {row ? (
+                                        <button
+                                          onClick={() => setTunnelDetailModal({
+                                            duong_lo: row.duong_lo,
+                                            loaiCongViec: g.label,
+                                            row,
+                                          })}
+                                          className="font-bold text-blue-700 text-sm hover:text-blue-900 hover:underline transition-colors break-words"
+                                        >
+                                          {row.duong_lo}
+                                        </button>
+                                      ) : (
+                                        <span className="text-slate-300 text-sm">—</span>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal phụ: chi tiết 1 đường lò (tiết diện + mét theo ca) */}
+      {tunnelDetailModal && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-end justify-center"
+          onClick={() => setTunnelDetailModal(null)}
+        >
+          <div
+            className="bg-white rounded-t-3xl w-full max-h-[80vh] overflow-auto"
+            onClick={e => e.stopPropagation()}
+            style={{ animation: "m-slideUp 0.32s cubic-bezier(0.32, 0.72, 0, 1)" }}
+          >
+            <div className="flex justify-center py-3">
+              <div style={{ width: 40, height: 4, borderRadius: 99, background: "#CBD5E1" }} />
+            </div>
+            <div className="flex items-center justify-between px-5 pb-3 border-b-2 border-slate-200 flex-shrink-0">
+              <div>
+                <h3 className="font-black text-slate-900 text-xl" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                  {tunnelDetailModal.duong_lo}
+                </h3>
+                <p className="text-sm font-bold text-slate-600 mt-1">
+                  {tunnelDetailModal.loaiCongViec} · Lũy kế tháng {month}/{year}
+                </p>
+              </div>
+              <button
+                onClick={() => setTunnelDetailModal(null)}
+                className="p-2 rounded-lg hover:bg-slate-100 flex-shrink-0"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-slate-50 rounded-xl border-2 border-slate-200 p-4">
+                  <p className="text-sm font-bold text-slate-700 uppercase mb-1.5">Tiết diện</p>
+                  <div className="text-[34px] font-black text-slate-900 leading-none">
+                    {tunnelDetailModal.row.tiet_dien !== undefined && tunnelDetailModal.row.tiet_dien !== null ? tunnelDetailModal.row.tiet_dien.toLocaleString("vi-VN") : "—"}
+                    {tunnelDetailModal.row.tiet_dien !== undefined && tunnelDetailModal.row.tiet_dien !== null && <span className="text-base font-bold ml-1 opacity-70">m²</span>}
+                  </div>
+                </div>
+                <div className="bg-slate-50 rounded-xl border-2 border-slate-200 p-4">
+                  <p className="text-sm font-bold text-slate-700 uppercase mb-1.5">Mét lũy kế</p>
+                  <div className="text-[34px] font-black text-slate-900 leading-none">
+                    {Math.round(tunnelDetailModal.row.tien_do).toLocaleString("vi-VN")}
+                    <span className="text-base font-bold ml-1 opacity-70">mét</span>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-slate-50 rounded-xl border-2 border-slate-200 p-4">
+                <p className="text-sm font-bold text-slate-700 uppercase mb-2.5">Mét theo ca</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { label: "Ca 1", value: tunnelDetailModal.row.ca1 },
+                    { label: "Ca 2", value: tunnelDetailModal.row.ca2 },
+                    { label: "Ca 3", value: tunnelDetailModal.row.ca3 },
+                  ]).map(c => (
+                    <div key={c.label} className="bg-white rounded-lg border-2 border-slate-200 p-2.5 text-center">
+                      <div className="text-xs font-bold text-slate-500 uppercase mb-1">{c.label}</div>
+                      <div className="text-[28px] font-black text-blue-700 leading-none">
+                        {Math.round(c.value || 0).toLocaleString("vi-VN")}
+                      </div>
+                      <div className="text-xs font-bold text-slate-500 mt-1">mét</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>

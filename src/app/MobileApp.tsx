@@ -1966,7 +1966,7 @@ function MobileHistory() {
     async function loadDetail() {
       setDetailLoading(true);
       try {
-        const res = await fetch(`${N8N_BAO_CAO_DETAIL_URL}/${selectedId}`);
+        const res = await fetch(`${N8N_BAO_CAO_DETAIL_URL}?id=${selectedId}`);
         if (!res.ok) throw new Error(`Lỗi ${res.status}`);
         const data = await res.json();
         if (!cancelled) {

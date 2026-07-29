@@ -1441,7 +1441,7 @@ function HistoryDetailModal({ historyId, onClose }: { historyId: number | null; 
       setLoading(true);
       setErrorMsg("");
       try {
-        const res = await fetch(`${N8N_BAO_CAO_DETAIL_URL}/${historyId}`);
+        const res = await fetch(`${N8N_BAO_CAO_DETAIL_URL}?id=${historyId}`);
         if (!res.ok) throw new Error(`Server trả về ${res.status}`);
         const data = await res.json();
         if (cancelled) return;

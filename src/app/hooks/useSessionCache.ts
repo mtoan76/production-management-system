@@ -24,11 +24,12 @@ const cacheStore = new Map<string, CacheEntry<any>>();
 export function useSessionCache<T>(
   key: string,
   fetcher: () => Promise<T>,
-  deps: unknown[] = []
+  deps: unknown[] = [],
+  defaultValue?: T
 ) {
-  const [data, setData] = useState<T | null>(() => {
+  const [data, setData] = useState<T>(() => {
     const cached = cacheStore.get(key);
-    return cached ? cached.data : null;
+    return cached ? cached.data : (defaultValue ?? ([] as unknown as T));
   });
   const [loading, setLoading] = useState<boolean>(() => !cacheStore.has(key));
   const [error, setError] = useState<string | null>("");

@@ -2922,7 +2922,7 @@ function DetailScreen() {
   // Cache theo tháng/năm được chọn (F5/phiên mới sẽ fetch lại)
   const detailKey = `duong-lo:${selectedMonth}|${selectedYear}`;
   const {
-    data: tunnelData,
+    data: tunnelData = [],
     loading: loadingDetail,
     error: detailError,
     refresh: refreshDetail,

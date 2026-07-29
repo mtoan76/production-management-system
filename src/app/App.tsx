@@ -1157,38 +1157,34 @@ function HistoryScreen() {
   const [toDate, setToDate] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [list, setList] = useState<BaoCaoListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState("");
-  const [refreshTick, setRefreshTick] = useState(0);
   const PAGE_SIZE = 5;
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setErrorMsg("");
-      try {
-        const params = new URLSearchParams();
-        if (fromDate) params.set("tu_ngay", fromDate);
-        if (toDate)   params.set("den_ngay", toDate);
-        if (search.trim()) params.set("cong_truong", search.trim());
-        const qs = params.toString();
-        const url = `${N8N_BAO_CAO_LIST_URL}${qs ? "?" + qs : ""}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Server trả về ${res.status}`);
-        const data = await res.json();
-        if (cancelled) return;
-        setList(Array.isArray(data?.data) ? data.data : []);
-      } catch (err: any) {
-        if (!cancelled) setErrorMsg(err?.message || "Lỗi tải lịch sử báo cáo");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [refreshTick, search, fromDate, toDate]);
+  // Cache theo phiên làm việc: filter thay đổi → key đổi → tự fetch lại
+  // F5 / phiên mới → cache mất → tự fetch
+  // Bấm "Làm mới" → cache xóa + fetch lại
+  const cacheKey = `bao-cao-list:${search.trim()}|${fromDate}|${toDate}`;
+  const {
+    data: listData,
+    loading,
+    error: errorMsg,
+    refresh,
+  } = useSessionCache<BaoCaoListItem[]>(
+    cacheKey,
+    async () => {
+      const params = new URLSearchParams();
+      if (fromDate) params.set("tu_ngay", fromDate);
+      if (toDate)   params.set("den_ngay", toDate);
+      if (search.trim()) params.set("cong_truong", search.trim());
+      const qs = params.toString();
+      const url = `${N8N_BAO_CAO_LIST_URL}${qs ? "?" + qs : ""}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Server trả về ${res.status}`);
+      const data = await res.json();
+      return Array.isArray(data?.data) ? data.data : [];
+    },
+    [search, fromDate, toDate]
+  );
+  const list = listData ?? [];
 
   const openDetail = (id: number) => {
     setSelectedId(id);
@@ -1274,7 +1270,7 @@ function HistoryScreen() {
           )}
         </div>
         <button
-          onClick={() => setRefreshTick(t => t + 1)}
+          onClick={refresh}
           disabled={loading}
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white hover:opacity-90 transition-opacity flex-shrink-0 disabled:opacity-60"
           style={{ background:"#2563EB" }}
@@ -2916,38 +2912,31 @@ function TunnelModal({ tunnelName, dailyData, onClose }: {
 
 // ─── Screen 3: Detail ─────────────────────────────────────
 function DetailScreen() {
-  const [tunnelData, setTunnelData] = useState<TunnelData[]>([]);
-  const [loadingDetail, setLoadingDetail] = useState(true);
-  const [detailError, setDetailError] = useState("");
   const [selectedTunnelName, setSelectedTunnelName] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [refreshTick, setRefreshTick] = useState(0);
   const [selectedMonth, setSelectedMonth] = useState(7);
   const [selectedYear, setSelectedYear] = useState(2026);
   const ITEMS_PER_PAGE = 5;
 
-  useEffect(() => {
-    let cancelled = false;
-    async function loadDetail() {
-      setLoadingDetail(true);
-      setDetailError("");
-      try {
-        const url = `${N8N_DUONG_LO_URL}?thang=${selectedMonth}&nam=${selectedYear}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Server trả về ${res.status}`);
-        const data = await res.json();
-        if (cancelled) return;
-        setTunnelData(Array.isArray(data?.data) ? data.data : []);
-      } catch (err: any) {
-        if (!cancelled) setDetailError(err?.message || "Lỗi tải dữ liệu đường lò");
-      } finally {
-        if (!cancelled) setLoadingDetail(false);
-      }
-    }
-    loadDetail();
-    return () => { cancelled = true; };
-  }, [selectedMonth, selectedYear, refreshTick]);
+  // Cache theo tháng/năm được chọn (F5/phiên mới sẽ fetch lại)
+  const detailKey = `duong-lo:${selectedMonth}|${selectedYear}`;
+  const {
+    data: tunnelData,
+    loading: loadingDetail,
+    error: detailError,
+    refresh: refreshDetail,
+  } = useSessionCache<TunnelData[]>(
+    detailKey,
+    async () => {
+      const url = `${N8N_DUONG_LO_URL}?thang=${selectedMonth}&nam=${selectedYear}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Server trả về ${res.status}`);
+      const data = await res.json();
+      return Array.isArray(data?.data) ? data.data : [];
+    },
+    [selectedMonth, selectedYear]
+  );
 
   // Mỗi đường lò chỉ giữ 1 dòng (dòng cuối cùng theo `ngay` ASC từ SQL → lũy kế lớn nhất)
   const latestByTunnel = useMemo(() => {
@@ -2998,7 +2987,7 @@ function DetailScreen() {
           <option value={2026}>Năm 2026</option>
         </select>
         <button
-          onClick={() => setRefreshTick(t => t + 1)}
+          onClick={refreshDetail}
           disabled={loadingDetail}
           title="Làm mới"
           className="ml-1 flex items-center justify-center w-7 h-7 rounded-lg text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors disabled:opacity-50"
@@ -3295,11 +3284,7 @@ function AlertScreen({ initialAlertId }: { initialAlertId?: number | null }) {
   const [tab, setTab]         = useState<AlertTab>("all");
   const [search, setSearch]   = useState("");
   const [selected, setSelected] = useState<CanhBaoListItem | null>(null);
-  const [list, setList]         = useState<CanhBaoListItem[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [errorMsg, setErrorMsg] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [refreshTick, setRefreshTick] = useState(0);
   const ITEMS_PER_PAGE = 5;
 
   // Helpers format
@@ -3325,34 +3310,30 @@ function AlertScreen({ initialAlertId }: { initialAlertId?: number | null }) {
     return colors[Math.abs(hash) % colors.length];
   };
 
-  // Fetch list từ API
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setErrorMsg("");
-      try {
-        const params = new URLSearchParams();
-        if (tab !== "all") {
-          const sev = TAB_SEVERITY[tab];
-          if (sev) params.set("severity", sev);
-        }
-        if (search.trim()) params.set("search", search.trim());
-        const url = `${N8N_CANH_BAO_LIST_URL}${params.toString() ? "?" + params.toString() : ""}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Server trả về ${res.status}`);
-        const data = await res.json();
-        if (cancelled) return;
-        setList(Array.isArray(data?.data) ? data.data : []);
-      } catch (err: any) {
-        if (!cancelled) setErrorMsg(err?.message || "Lỗi tải cảnh báo");
-      } finally {
-        if (!cancelled) setLoading(false);
+  // Cache list theo (tab, search) — đổi filter → key đổi → fetch lại
+  const alertsKey = `canh-bao-list:${tab}|${search.trim()}`;
+  const {
+    data: list = [],
+    loading,
+    error: errorMsg,
+    refresh,
+  } = useSessionCache<CanhBaoListItem[]>(
+    alertsKey,
+    async () => {
+      const params = new URLSearchParams();
+      if (tab !== "all") {
+        const sev = TAB_SEVERITY[tab];
+        if (sev) params.set("severity", sev);
       }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [tab, search, refreshTick]);
+      if (search.trim()) params.set("search", search.trim());
+      const url = `${N8N_CANH_BAO_LIST_URL}${params.toString() ? "?" + params.toString() : ""}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Server trả về ${res.status}`);
+      const data = await res.json();
+      return Array.isArray(data?.data) ? data.data : [];
+    },
+    [tab, search]
+  );
 
   // Khi navigate từ Báo cáo tổng quan với initialAlertId → mở modal detail.
   // Dùng ref để chỉ mở 1 lần, tránh bị effect "list" (auto refresh) bật lại modal sau khi user đã đóng.
@@ -3392,7 +3373,7 @@ function AlertScreen({ initialAlertId }: { initialAlertId?: number | null }) {
           Trung tâm cảnh báo
         </h1>
         <button
-          onClick={() => setRefreshTick(t => t + 1)}
+          onClick={refresh}
           disabled={loading}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors disabled:opacity-50"
           title="Làm mới"
@@ -3579,10 +3560,12 @@ const SCREEN_STORAGE_KEY = "pms_active_screen";
 const VALID_SCREENS: Screen[] = ["input", "history", "overview", "detail", "alerts"];
 
 function DesktopApp() {
-  // Khôi phục màn hình từ localStorage khi load (mặc định "overview" nếu chưa có / không hợp lệ)
+  // Khôi phục màn hình từ sessionStorage khi load (mặc định "overview" nếu chưa có / không hợp lệ)
+  // sessionStorage tự xóa khi đóng tab/trình duyệt → mỗi phiên mới luôn về "overview"
+  // F5/reload trong cùng phiên thì giữ nguyên screen hiện tại
   const [screen, setScreen] = useState<Screen>(() => {
     try {
-      const saved = localStorage.getItem(SCREEN_STORAGE_KEY);
+      const saved = sessionStorage.getItem(SCREEN_STORAGE_KEY);
       if (saved && (VALID_SCREENS as string[]).includes(saved)) {
         return saved as Screen;
       }
@@ -3593,10 +3576,10 @@ function DesktopApp() {
   // Số chấm đỏ trên sidebar "Trung tâm cảnh báo" = alert Nghiêm trọng chưa xử lý
   const [criticalAlertCount, setCriticalAlertCount] = useState(0);
 
-  // Mỗi khi screen đổi → lưu vào localStorage để F5 không bị reset
+  // Mỗi khi screen đổi → lưu vào sessionStorage để F5 trong cùng phiên không bị reset
   useEffect(() => {
     try {
-      localStorage.setItem(SCREEN_STORAGE_KEY, screen);
+      sessionStorage.setItem(SCREEN_STORAGE_KEY, screen);
     } catch {}
   }, [screen]);
 
@@ -3649,6 +3632,7 @@ function DesktopApp() {
 // ─── App root (auto-detect thiết bị) ───────────────────────
 import MobileApp from "./MobileApp";
 import { useDeviceDetect } from "./hooks/useDeviceDetect";
+import { useSessionCache } from "./hooks/useSessionCache";
 
 
 // ─── ErrorBoundary (catch runtime errors, show thay vì trắng màn hình) ──────────────

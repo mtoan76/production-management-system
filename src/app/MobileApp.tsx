@@ -4,6 +4,7 @@
 // Management System. Cùng backend, cùng API endpoints với DesktopApp.tsx.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useRef, useEffect, useMemo } from "react";
+import { useSessionCache } from "./hooks/useSessionCache";
 import {
   BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip,
 } from "recharts";
@@ -1299,32 +1300,25 @@ function MobileDetail({ onNav }: { onNav: (t: TabId) => void }) {
   const [search, setSearch] = useState("");
   const [month, setMonth] = useState(() => new Date().getMonth() + 1);
   const [year, setYear] = useState(() => new Date().getFullYear());
-  const [tunnelData, setTunnelData] = useState<TunnelData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState("");
   const [selected, setSelected] = useState<TunnelData | null>(null);
-  const [refreshTick, setRefreshTick] = useState(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setErrorMsg("");
-      try {
-        const res = await fetch(`${N8N_DUONG_LO_URL}?thang=${month}&nam=${year}`);
-        if (!res.ok) throw new Error(`Lỗi ${res.status}`);
-        const data = await res.json();
-        if (cancelled) return;
-        setTunnelData(Array.isArray(data?.data) ? data.data : []);
-      } catch (err: any) {
-        if (!cancelled) setErrorMsg(err?.message || "Lỗi tải dữ liệu");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [month, year, refreshTick]);
+  // Cache theo (month, year)
+  const detailKey = `mobile-duong-lo:${month}|${year}`;
+  const {
+    data: tunnelData = [],
+    loading,
+    error: errorMsg,
+    refresh,
+  } = useSessionCache<TunnelData[]>(
+    detailKey,
+    async () => {
+      const res = await fetch(`${N8N_DUONG_LO_URL}?thang=${month}&nam=${year}`);
+      if (!res.ok) throw new Error(`Lỗi ${res.status}`);
+      const data = await res.json();
+      return Array.isArray(data?.data) ? data.data : [];
+    },
+    [month, year]
+  );
 
   // Mỗi đường lò giữ 1 dòng cuối (lũy kế mới nhất)
   const latestByTunnel = useMemo(() => {
@@ -1366,7 +1360,7 @@ function MobileDetail({ onNav }: { onNav: (t: TabId) => void }) {
             <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
           <button
-            onClick={() => setRefreshTick(t => t + 1)}
+            onClick={refresh}
             disabled={loading}
             className="p-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 active:bg-white/10 disabled:opacity-50"
             aria-label="Làm mới"
@@ -1923,41 +1917,35 @@ function MobileHistory() {
   const [search, setSearch] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [list, setList] = useState<BaoCaoListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<BaoCaoDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [refreshTick, setRefreshTick] = useState(0);
   const [expandedCas, setExpandedCas] = useState<Set<number>>(new Set());
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setErrorMsg("");
-      try {
-        const params = new URLSearchParams();
-        if (fromDate) params.set("tu_ngay", fromDate);
-        if (toDate)   params.set("den_ngay", toDate);
-        if (search.trim()) params.set("cong_truong", search.trim());
-        const qs = params.toString();
-        const url = `${N8N_BAO_CAO_LIST_URL}${qs ? "?" + qs : ""}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Lỗi ${res.status}`);
-        const data = await res.json();
-        if (cancelled) return;
-        setList(Array.isArray(data?.data) ? data.data : []);
-      } catch (err: any) {
-        if (!cancelled) setErrorMsg(err?.message || "Lỗi tải lịch sử báo cáo");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [refreshTick, search, fromDate, toDate]);
+  // Cache theo (search, fromDate, toDate) — F5/phiên mới sẽ fetch lại
+  const historyKey = `mobile-bao-cao-list:${search.trim()}|${fromDate}|${toDate}`;
+  const {
+    data: listData = [],
+    loading,
+    error: errorMsg,
+    refresh,
+  } = useSessionCache<BaoCaoListItem[]>(
+    historyKey,
+    async () => {
+      const params = new URLSearchParams();
+      if (fromDate) params.set("tu_ngay", fromDate);
+      if (toDate)   params.set("den_ngay", toDate);
+      if (search.trim()) params.set("cong_truong", search.trim());
+      const qs = params.toString();
+      const url = `${N8N_BAO_CAO_LIST_URL}${qs ? "?" + qs : ""}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Lỗi ${res.status}`);
+      const data = await res.json();
+      return Array.isArray(data?.data) ? data.data : [];
+    },
+    [search, fromDate, toDate]
+  );
+  const list = listData;
 
   useEffect(() => {
     if (selectedId == null) { setDetail(null); return; }
@@ -2038,7 +2026,7 @@ return (
             />
           </div>
           <button
-            onClick={() => setRefreshTick(t => t + 1)}
+            onClick={refresh}
             disabled={loading}
             className="p-2 rounded-lg bg-white/5 border border-white/10 text-slate-300 active:bg-white/10 disabled:opacity-50"
             aria-label="Làm mới"
@@ -2297,39 +2285,32 @@ function InfoCell({ label, value, tone = "gray" }: { label: string; value: strin
 function MobileAlerts() {
   const [tab, setTab] = useState<AlertTab>("all");
   const [search, setSearch] = useState("");
-  const [list, setList] = useState<CanhBaoListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState("");
   const [selected, setSelected] = useState<CanhBaoListItem | null>(null);
-  const [refreshTick, setRefreshTick] = useState(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setErrorMsg("");
-      try {
-        const params = new URLSearchParams();
-        if (tab !== "all") {
-          const sev = TAB_SEVERITY[tab];
-          if (sev) params.set("severity", sev);
-        }
-        if (search.trim()) params.set("search", search.trim());
-        const url = `${N8N_CANH_BAO_LIST_URL}${params.toString() ? "?" + params.toString() : ""}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Lỗi ${res.status}`);
-        const data = await res.json();
-        if (cancelled) return;
-        setList(Array.isArray(data?.data) ? data.data : []);
-      } catch (err: any) {
-        if (!cancelled) setErrorMsg(err?.message || "Lỗi tải cảnh báo");
-      } finally {
-        if (!cancelled) setLoading(false);
+  // Cache list theo (tab, search)
+  const alertsKey = `mobile-canh-bao-list:${tab}|${search.trim()}`;
+  const {
+    data: list = [],
+    loading,
+    error: errorMsg,
+    refresh,
+  } = useSessionCache<CanhBaoListItem[]>(
+    alertsKey,
+    async () => {
+      const params = new URLSearchParams();
+      if (tab !== "all") {
+        const sev = TAB_SEVERITY[tab];
+        if (sev) params.set("severity", sev);
       }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [tab, search, refreshTick]);
+      if (search.trim()) params.set("search", search.trim());
+      const url = `${N8N_CANH_BAO_LIST_URL}${params.toString() ? "?" + params.toString() : ""}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Lỗi ${res.status}`);
+      const data = await res.json();
+      return Array.isArray(data?.data) ? data.data : [];
+    },
+    [tab, search]
+  );
 
   const counts = {
     all: list.length,
@@ -2353,7 +2334,7 @@ function MobileAlerts() {
             Cảnh báo
           </div>
           <button
-            onClick={() => setRefreshTick(t => t + 1)}
+            onClick={refresh}
             disabled={loading}
             className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-[11px] font-bold flex items-center gap-1.5 active:bg-white/10 disabled:opacity-50"
           >

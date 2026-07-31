@@ -1437,7 +1437,7 @@ function HistoryDetailModal({ historyId, onClose }: { historyId: number | null; 
       setLoading(true);
       setErrorMsg("");
       try {
-        const res = await fetch(`${N8N_BAO_CAO_DETAIL_URL}?id=${historyId}`);
+        const res = await fetch(`${N8N_BAO_CAO_DETAIL_URL}/${historyId}`);
         if (!res.ok) throw new Error(`Server trả về ${res.status}`);
         const data = await res.json();
         if (cancelled) return;
@@ -2048,24 +2048,32 @@ function OverviewScreen({ onOpenAlert }: { onOpenAlert: (alertId: number) => voi
   const keHoachThang = congTruongData?.keHoachThang || { lo_cho: 0, dao_lo: 0, xen_lo: 0, chong_doi: 0 };
 
   // Rút gọn tên công trường:
-  //  - "CT Khai thác 1"     -> "1"  (chỉ lấy số)
-  //  - "Cơ giới hóa 1"      -> "Cơ giới hóa 1"  (giữ nguyên để tránh trùng với CT Khai thác 1)
-  //  - "CT Đào lò 1"        -> "Đào lò 1"     (giữ phân loại)
+  //  - "Khai thác 1"     -> "1"  (chỉ lấy số)
+  //  - "Cơ giới hóa 1"   -> "Cơ giới hóa 1"  (giữ nguyên để tránh trùng với Khai thác 1)
+  //  - "Đào lò 1"        -> "Đào lò 1"     (giữ phân loại)
   function simplifySiteName(name: string) {
     if (!name) return name;
     // Cơ giới hóa X: giữ nguyên cả cụm vì khác tiền tố khai thác
     if (/^Cơ giới hóa\b/i.test(name)) return name;
-    // CT Đào lò X: rút "CT " + số -> "Đào lò X"
-    const daoLoMatch = name.match(/^CT\s+Đào lò\s+(\d+)$/i);
+    // Đào lò X: giữ nguyên "Đào lò X" (không có tiền tố CT nữa)
+    const daoLoMatch = name.match(/^Đào lò\s+(\d+)$/i);
     if (daoLoMatch) return `Đào lò ${daoLoMatch[1]}`;
-    // CT Khai thác X (mặc định): chỉ lấy số
+    // Khai thác X (mặc định): chỉ lấy số
     const khaiThacMatch = name.match(/(\d+)$/);
     if (khaiThacMatch) return khaiThacMatch[1];
     return name;
   }
 
-const khaiThacSites = rawKhaiThacSites.map(s => ({ ...s, tenCongTruong: simplifySiteName(s.tenCongTruong) }));
-  const daoLoSites = rawDaoLoSites.map(s => ({ ...s, tenCongTruong: simplifySiteName(s.tenCongTruong) }));
+const khaiThacSites = rawKhaiThacSites.map(s => ({ 
+  ...s, 
+  tenCongTruong: simplifySiteName(s.tenCongTruong),
+  originalTenCongTruong: s.tenCongTruong 
+}));
+const daoLoSites = rawDaoLoSites.map(s => ({ 
+  ...s, 
+  tenCongTruong: simplifySiteName(s.tenCongTruong),
+  originalTenCongTruong: s.tenCongTruong 
+}));
   const [congTruongModalOpen, setCongTruongModalOpen] = useState<null | { site: any; type: "khai_thac" | "dao_lo" }>(null);
   // ─── Drill-down: bảng đường lò bên trong popup công trường ─────────────────
   const [congTruongChiTiet, setCongTruongChiTiet] = useState<CongTruongChiTiet | null>(null);
@@ -2084,7 +2092,7 @@ const khaiThacSites = rawKhaiThacSites.map(s => ({ ...s, tenCongTruong: simplify
     }
     let cancelled = false;
     setLoadingCongTruongChiTiet(true);
-    fetch(`${N8N_CONG_TRUONG_CHITIET_URL}?thang=${selectedMonth}&nam=${selectedYear}&site=${encodeURIComponent(congTruongModalOpen.site.tenCongTruong)}&type=${congTruongModalOpen.type}`)
+    fetch(`${N8N_CONG_TRUONG_CHITIET_URL}?thang=${selectedMonth}&nam=${selectedYear}&site=${encodeURIComponent(congTruongModalOpen.site.originalTenCongTruong)}&type=${congTruongModalOpen.type}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (cancelled) return;

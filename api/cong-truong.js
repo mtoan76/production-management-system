@@ -20,13 +20,13 @@ function clampYear(v, fallback) {
 
 // Danh sách công trường khai thác (đồng bộ với server)
 const KHAI_THAC_SITES = [
-  "CT Khai thác 1", "CT Khai thác 2", "CT Khai thác 3",
-  "CT Khai thác 5", "CT Khai thác 6", "CT Khai thác 8",
+  "Khai thác 1", "Khai thác 2", "Khai thác 3",
+  "Khai thác 5", "Khai thác 6", "Khai thác 8",
   "Cơ giới hóa 1",
 ];
 // Danh sách công trường đào lò (đồng bộ với server)
 const DAO_LO_SITES = [
-  "CT Đào lò 1", "CT Đào lò 2", "CT Đào lò 3", "CT Đào lò 6",
+  "Đào lò 1", "Đào lò 2", "Đào lò 3", "Đào lò 6",
 ];
 
 // Kế hoạch năm cho 4 loại công việc (đồng bộ với server)

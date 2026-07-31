@@ -16,14 +16,14 @@ function clampYear(v, fallback) {
 
 // Danh sách công trường khai thác (danh sách đầy đủ theo yêu cầu: 1, 2, 3, 5, 6, 8, Cơ giới hóa 1)
 const KHAI_THAC_SITES = [
-  "CT Khai thác 1", "CT Khai thác 2", "CT Khai thác 3", 
-  "CT Khai thác 5", "CT Khai thác 6", "CT Khai thác 8", 
+  "Khai thác 1", "Khai thác 2", "Khai thác 3", 
+  "Khai thác 5", "Khai thác 6", "Khai thác 8", 
   "Cơ giới hóa 1"
 ];
 
 // Danh sách công trường đào lò (danh sách đầy đủ: 1, 2, 3, 6)
 const DAO_LO_SITES = [
-  "CT Đào lò 1", "CT Đào lò 2", "CT Đào lò 3", "CT Đào lò 6"
+  "Đào lò 1", "Đào lò 2", "Đào lò 3", "Đào lò 6"
 ];
 
 // Kế hoạch năm cho 4 loại công việc (đọc từ env hoặc mặc định)
@@ -233,25 +233,7 @@ router.get("/cong-truong", async (req, res, next) => {
     next(err);
   }
 });
-
-// ─── Helper chung: map tên site đã được frontend simplify về tên gốc trong DB ──
-// Frontend hiển thị "1" thay vì "CT Khai thác 1", "Đào lò 1" thay vì "CT Đào lò 1"
-// → backend cần reverse map để query đúng `cong_truong`
-function resolveSiteName(siteParam, type) {
-  const s = (siteParam || "").trim();
-  if (!s) return "";
-  if (type === "khai_thac") {
-    if (s.startsWith("Cơ giới hóa")) return s;
-    if (/^\d+$/.test(s)) return `CT Khai thác ${s}`;
-    return s;
-  }
-  if (type === "dao_lo") {
-    if (s.startsWith("Đào lò ")) return `CT ${s}`;
-    return s;
-  }
-  return s;
-}
-
+ 
 // GET /api/cong-truong-chi-tiet?thang=X&nam=Y&site=TEN_DA_SIMPLIFY&type=khai_thac|dao_lo
 // Trả về danh sách đường lò × loại công việc trong 1 công trường:
 //   - daoLo / xenLo / chongDoi: mỗi mảng gồm { duong_lo, tiet_dien, tien_do, ca1, ca2, ca3 }
@@ -268,15 +250,21 @@ router.get("/cong-truong-chi-tiet", async (req, res, next) => {
     if (!siteParam) {
       return res.status(400).json({ error: "Missing required query param: site" });
     }
-
-    const originalSite = resolveSiteName(siteParam, type);
+ 
+    const site = (siteParam || "").trim();
+    if (!site) {
+      return res.status(400).json({ error: "Missing required query param: site" });
+    }
+ 
     const validSites = type === "khai_thac" ? KHAI_THAC_SITES : DAO_LO_SITES;
-    if (!validSites.includes(originalSite)) {
+    if (!validSites.includes(site)) {
       return res.json({
         data: { daoLo: [], xenLo: [], chongDoi: [] },
-        thang, nam, site: originalSite, type,
+        thang, nam, site, type,
       });
     }
+
+    const originalSite = site;
 
     const query = `
       WITH filtered AS (
@@ -344,6 +332,11 @@ router.get("/cong-truong-chi-tiet", async (req, res, next) => {
     `;
 
     const result = await pool.query(query, [originalSite, thang, nam]);
+    console.log("DEBUG: Query params:", { originalSite, thang, nam });
+    console.log("DEBUG: Query result rows:", result.rows.length);
+    if (result.rows.length > 0) {
+      console.log("DEBUG: First row:", JSON.stringify(result.rows[0], null, 2));
+    }
 
     const toTunnel = (r) => ({
       duong_lo: r.duong_lo,

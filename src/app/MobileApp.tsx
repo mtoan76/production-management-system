@@ -498,7 +498,7 @@ function MobileOverview({
     }
     let cancelled = false;
     setLoadingCongTruongChiTiet(true);
-    fetch(`${N8N_CONG_TRUONG_CHITIET_URL}?thang=${month}&nam=${year}&site=${encodeURIComponent(congTruongModalOpen.site.tenCongTruong)}&type=${congTruongModalOpen.type}`)
+    fetch(`${N8N_CONG_TRUONG_CHITIET_URL}?thang=${month}&nam=${year}&site=${encodeURIComponent(congTruongModalOpen.site.originalTenCongTruong)}&type=${congTruongModalOpen.type}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (cancelled) return;
@@ -738,8 +738,16 @@ function MobileOverview({
     return name;
   }
 
-  const khaiThacSites = (congTruongData?.khaiThac || []).map(s => ({ ...s, tenCongTruong: simplifySiteName(s.tenCongTruong) }));
-  const daoLoSites = (congTruongData?.daoLo || []).map(s => ({ ...s, tenCongTruong: simplifySiteName(s.tenCongTruong) }));
+  const khaiThacSites = (congTruongData?.khaiThac || []).map(s => ({ 
+    ...s, 
+    tenCongTruong: simplifySiteName(s.tenCongTruong),
+    originalTenCongTruong: s.tenCongTruong 
+  }));
+  const daoLoSites = (congTruongData?.daoLo || []).map(s => ({ 
+    ...s, 
+    tenCongTruong: simplifySiteName(s.tenCongTruong),
+    originalTenCongTruong: s.tenCongTruong 
+  }));
   const remainingDays = congTruongData?.remainingDays ?? 0;
   const keHoachThang = congTruongData?.keHoachThang || { lo_cho: 0, dao_lo: 0, xen_lo: 0, chong_doi: 0 };
   const chartBadge = viewMode === "month" ? `Năm ${year}` : `Tháng ${month}`;
@@ -1954,7 +1962,7 @@ function MobileHistory() {
     async function loadDetail() {
       setDetailLoading(true);
       try {
-        const res = await fetch(`${N8N_BAO_CAO_DETAIL_URL}?id=${selectedId}`);
+        const res = await fetch(`${N8N_BAO_CAO_DETAIL_URL}/${selectedId}`);
         if (!res.ok) throw new Error(`Lỗi ${res.status}`);
         const data = await res.json();
         if (!cancelled) {

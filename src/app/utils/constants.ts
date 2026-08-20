@@ -1,9 +1,16 @@
 import { StatusType } from '../types';
 
 // ─── URL server ──────────────────────────────────────────────────────────
+// Task 3: Webhook "Nhập báo cáo"
+// Mặc định dùng proxy backend /api/nhap-bao-cao để TRÁNH LỖI CORS khi chạy localhost
+// (frontend → Vite proxy → localhost:3000 → server forward → n8n). Server đọc N8N_WEBHOOK_URL từ .env
+// Nếu muốn gọi trực tiếp n8n (không qua backend), tạo file .env và thêm:
+//   VITE_N8N_WEBHOOK_URL=https://YOUR_N8N_HOST/webhook/nhap-bao-cao
+// Ví dụ n8n cloud: https://ten-ban.app.n8n.cloud/webhook/nhap-bao-cao
+// Lưu ý: Vite chỉ đọc biến có tiền tố VITE_, sau khi đổi phải restart `npm run dev`
 export const N8N_WEBHOOK_URL =
   (import.meta as any)?.env?.VITE_N8N_WEBHOOK_URL
-  || "https://n8n-proxy.manhtoan7620005.workers.dev/webhook/nhap-bao-cao";
+  || "/api/nhap-bao-cao";
 
 export const N8N_OVERVIEW_URL =
   (import.meta as any)?.env?.VITE_N8N_OVERVIEW_URL || `/api/tong-quan`;

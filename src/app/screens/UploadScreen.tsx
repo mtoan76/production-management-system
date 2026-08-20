@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import {
   Upload, X, FileSpreadsheet, FileImage, Download, Loader2, AlertCircle,
-  CheckCircle2, BarChart2, List, XCircle, AlertTriangle, Clock, User, MapPin,
+  CheckCircle, CheckCircle2, BarChart2, List, XCircle, AlertTriangle, Clock, User, MapPin,
 } from "lucide-react";
 import { Screen, SubmitStatus, ReportItem, TemplateType, FileValidation } from '../types';
 import { N8N_WEBHOOK_URL, TEMPLATE_FILES } from '../utils/constants';
@@ -300,6 +300,13 @@ export default function UploadScreen({ onNavigate }: { onNavigate: (s: Screen) =
 
     setStatus("processing");
 
+    // Task 3: URL webhook lấy từ constants.ts → đọc từ import.meta.env.VITE_N8N_WEBHOOK_URL
+    // Đổi URL thực tế bằng cách tạo file .env ở root và thêm dòng:
+    //   VITE_N8N_WEBHOOK_URL=https://YOUR_N8N_HOST/webhook/nhap-bao-cao
+    // Ví dụ n8n cloud: https://ten-ban.app.n8n.cloud/webhook/29ae5a01-339e-4fc9-acd3-a46d3b049818
+    // Hoặc n8n local: http://localhost:5678/webhook/nhap-bao-cao
+    console.log("[Upload] Đang gửi tới webhook:", N8N_WEBHOOK_URL);
+
     try {
       const response = await fetch(N8N_WEBHOOK_URL, {
         method: "POST",
@@ -326,6 +333,7 @@ export default function UploadScreen({ onNavigate }: { onNavigate: (s: Screen) =
         );
 
         if (items.length === 0 || hasExplicitError) {
+          console.error("[n8n webhook] Response không có dữ liệu hoặc báo lỗi:", { data, url: N8N_WEBHOOK_URL, status: response.status });
           setErrorMessage(
             hasExplicitError && typeof data.error === "string"
               ? `n8n báo lỗi: ${data.error}`
@@ -339,12 +347,35 @@ export default function UploadScreen({ onNavigate }: { onNavigate: (s: Screen) =
         setStatus("success");
         setFile(null);
       } else {
-        setErrorMessage(`Server n8n trả về lỗi (mã ${response.status}). Vui lòng kiểm tra workflow.`);
+        // Đọc body lỗi chi tiết để debug CORS / 404 / 500 của n8n
+        let errorBody = "";
+        try { errorBody = await response.text(); } catch {}
+        console.error("[n8n webhook] HTTP error chi tiết:", {
+          url: N8N_WEBHOOK_URL,
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody?.slice(0, 2000),
+          headers: Object.fromEntries(response.headers.entries()),
+        });
+        setErrorMessage(`Server n8n trả về lỗi (mã ${response.status} ${response.statusText}). ${errorBody ? "Chi tiết: " + errorBody.slice(0,200) : "Vui lòng kiểm tra workflow đã Active và URL webhook đúng chưa."}`);
         setStatus("error");
       }
-    } catch (error) {
-      console.error("Lỗi kết nối:", error);
-      setErrorMessage("Không thể kết nối đến Backend n8n. Kiểm tra n8n đã bật (Active) và đúng URL webhook chưa.");
+    } catch (error: any) {
+      // Lỗi network / CORS / DNS / webhook chưa Active
+      console.error("[n8n webhook] Network/Fetch failed chi tiết:", {
+        url: N8N_WEBHOOK_URL,
+        name: error?.name,
+        message: error?.message,
+        stack: error?.stack,
+        cause: (error as any)?.cause,
+      });
+      // Gợi ý kiểm tra .env và CORS
+      const isCorsLike = /Failed to fetch|NetworkError|TypeError/i.test(error?.message || "");
+      setErrorMessage(
+        isCorsLike
+          ? `Không thể kết nối đến Backend n8n (${N8N_WEBHOOK_URL}). Nguyên nhân thường gặp: (1) URL webhook sai / workflow chưa Active, (2) n8n chưa bật CORS / Allowed Origins, (3) URL http vs https. Mở DevTools → Console/Network để xem chi tiết. Lỗi gốc: ${error?.message || error}`
+          : `Không thể kết nối đến Backend n8n. Chi tiết: ${error?.message || error}. Kiểm tra n8n đã bật (Active) và đúng URL webhook chưa.`
+      );
       setStatus("error");
     }
   };

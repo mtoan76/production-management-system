@@ -143,17 +143,12 @@ export default function MobileOverview({ onNav }: { onNav: (t: TabId) => void })
     return { actual, plan, keHoachNam, luyKe, yearActual };
   };
 
-  // Doanh thu / Tiêu thụ tính tỷ lệ
+  // Task 2: Doanh thu / Tiêu thụ lấy thực tế từ DB, xóa hardcode 120/50000
   const loCho = getKpi("lo_cho");
   const daoLo = getKpi("dao_lo");
   const xenLo = getKpi("xen_lo");
-
-  const doanhThuPlan = 120;
-  const tieuThuPlan = 50000;
-  const doanhThuPlanView = viewMode === "year" ? doanhThuPlan : doanhThuPlan / 12;
-  const tieuThuPlanView = viewMode === "year" ? tieuThuPlan : tieuThuPlan / 12;
-  const doanhThuActual = loCho.plan > 0 ? (loCho.actual / loCho.plan) * doanhThuPlanView : 0;
-  const tieuThuActual = daoLo.plan > 0 ? (daoLo.actual / daoLo.plan) * tieuThuPlanView : 0;
+  const doanhThu = getKpi("doanh_thu");
+  const tieuThu = getKpi("tieu_thu");
 
   const remainingDaysInMode = useMemo(() => {
     if (viewMode === "day") return Math.max(new Date(year, month, 0).getDate() - today.getDate(), 0);
@@ -184,8 +179,8 @@ export default function MobileOverview({ onNav }: { onNav: (t: TabId) => void })
     buildCard("lo_cho", "Sản lượng than", Container, loCho.actual, loCho.keHoachNam, "tấn", "#1a4980", "#1a4980"),
     buildCard("dao_lo", "Tiến độ đào lò", BoxSelect, daoLo.actual, daoLo.keHoachNam, "m", "#e67e22", "#e67e22"),
     buildCard("xen_lo", "Xén lò", Scissors, xenLo.actual, xenLo.keHoachNam, "m", "#10B981", "#10B981"),
-    buildCard("doanh_thu", "Doanh thu", ChartBar, doanhThuActual, doanhThuPlan, "tỷ", "#7C3AED", "#7C3AED"),
-    buildCard("tieu_thu", "Tiêu thụ", Droplets, tieuThuActual, tieuThuPlan, "tấn", "#0891B2", "#0891B2"),
+    buildCard("doanh_thu", "Doanh thu", ChartBar, doanhThu.actual, doanhThu.keHoachNam, "tỷ", "#7C3AED", "#7C3AED"),
+    buildCard("tieu_thu", "Tiêu thụ", Droplets, tieuThu.actual, tieuThu.keHoachNam, "tấn", "#0891B2", "#0891B2"),
   ];
 
   const planLabel = "Kế Hoạch Năm";

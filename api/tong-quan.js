@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const data = await getTongQuan({ thang: req.query.thang, nam: req.query.nam });
+    const data = await getTongQuan({ thang: req.query.thang, nam: req.query.nam, bao_cao_id: req.query.bao_cao_id });
     res.status(200).json(data);
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });

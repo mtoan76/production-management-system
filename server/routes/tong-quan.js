@@ -5,7 +5,7 @@ const router = express.Router();
 
 router.get("/tong-quan", async (req, res, next) => {
   try {
-    res.json(await getTongQuan({ thang: req.query.thang, nam: req.query.nam }));
+    res.json(await getTongQuan({ thang: req.query.thang, nam: req.query.nam, bao_cao_id: req.query.bao_cao_id }));
   } catch (err) {
     next(err);
   }

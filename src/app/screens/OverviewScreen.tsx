@@ -187,19 +187,20 @@ const getKpi = (type: string) => {
   const loCho = getKpi("lo_cho");
   const daoLo = getKpi("dao_lo");
   const xenLo = getKpi("xen_lo");
-  const doanhThuPlan = 120, tieuThuPlan = 50000;
-  const doanhThuPlanView = viewMode === "year" ? doanhThuPlan : doanhThuPlan / 12;
-  const tieuThuPlanView = viewMode === "year" ? tieuThuPlan : tieuThuPlan / 12;
-  const doanhThuActual = loCho.plan > 0 ? (loCho.actual / loCho.plan) * doanhThuPlanView : 0;
-  const tieuThuActual = daoLo.plan > 0 ? (daoLo.actual / daoLo.plan) * tieuThuPlanView : 0;
+  // Task 2: Xóa hardcode 120/50000 → lấy thực tế từ DB (kế hoạch năm đã trả về từ /api/tong-quan)
+  // Hỗ trợ cả key mới (doanh_thu/tieu_thu) và fallback key cũ
+  const doanhThu = getKpi("doanh_thu");
+  const tieuThu = getKpi("tieu_thu");
+  // Nếu API chưa trả doanh_thu/tieu_thu (legacy), fallback về 0 để không hiển thị số ảo
+  // Trước đây: const doanhThuPlan = 120, tieuThuPlan = 50000 (hardcode) → đã xóa
 
   const viewPlan = (keHoachNam: number) => viewMode === "year" ? keHoachNam : keHoachNam / 12;
   const sections: KpiSection[] = [
     buildSection("1", 1, "Sản Lượng Than Lũy Kế", Container, "#1a4980", "#1a4980", "#1a4980", "#e6f0ff", loCho.actual, viewPlan(loCho.keHoachNam), "tấn", remainingDaysYear),
     buildSection("2", 2, "Tiến Độ Đào Lò Lũy Kế", BoxSelect, "#e67e22", "#e67e22", "#e67e22", "#fef5eb", daoLo.actual, viewPlan(daoLo.keHoachNam), "m", remainingDaysYear),
     buildSection("3", 3, "Xén Lò Lũy Kế", Scissors, "#10B981", "#10B981", "#059669", "#ECFDF5", xenLo.actual, viewPlan(xenLo.keHoachNam), "m", remainingDaysYear),
-    buildSection("4", 4, "Doanh Thu Lũy Kế", ChartBar, "#7C3AED", "#7C3AED", "#7C3AED", "#F5F3FF", doanhThuActual, viewMode === "year" ? doanhThuPlan : doanhThuPlanView, "tỷ", remainingDaysYear),
-    buildSection("5", 5, "Tiêu Thụ Lũy Kế", Droplets, "#0891B2", "#0891B2", "#0891B2", "#ECFEFF", tieuThuActual, viewMode === "year" ? tieuThuPlan : tieuThuPlanView, "tấn", remainingDaysYear),
+    buildSection("4", 4, "Doanh Thu Lũy Kế", ChartBar, "#7C3AED", "#7C3AED", "#7C3AED", "#F5F3FF", doanhThu.actual, viewPlan(doanhThu.keHoachNam), "tỷ", remainingDaysYear),
+    buildSection("5", 5, "Tiêu Thụ Lũy Kế", Droplets, "#0891B2", "#0891B2", "#0891B2", "#ECFEFF", tieuThu.actual, viewPlan(tieuThu.keHoachNam), "tấn", remainingDaysYear),
   ];
 
   const pctFor = (type: string, mode: ViewMode) => {
@@ -219,8 +220,8 @@ const getKpi = (type: string) => {
     { name: "Sản Lượng", Ngày: pctFor("lo_cho", "day"), Tháng: pctFor("lo_cho", "month"), Năm: pctFor("lo_cho", "year") },
     { name: "Đào Lò", Ngày: pctFor("dao_lo", "day"), Tháng: pctFor("dao_lo", "month"), Năm: pctFor("dao_lo", "year") },
     { name: "Xén Lò", Ngày: pctFor("xen_lo", "day"), Tháng: pctFor("xen_lo", "month"), Năm: pctFor("xen_lo", "year") },
-    { name: "Doanh Thu", Ngày: loCho.plan > 0 ? Math.round((loCho.luyKe / loCho.plan) * (12 / 365) * 1000) / 10 : 0, Tháng: loCho.plan > 0 ? Math.round((loCho.luyKe / loCho.plan) * 1000) / 10 : 0, Năm: loCho.plan > 0 ? Math.round((loCho.yearActual / loCho.plan) * 1000) / 10 : 0 },
-    { name: "Tiêu Thụ", Ngày: daoLo.plan > 0 ? Math.round((daoLo.luyKe / daoLo.plan) * (12 / 365) * 1000) / 10 : 0, Tháng: daoLo.plan > 0 ? Math.round((daoLo.luyKe / daoLo.plan) * 1000) / 10 : 0, Năm: daoLo.plan > 0 ? Math.round((daoLo.yearActual / daoLo.plan) * 1000) / 10 : 0 },
+    { name: "Doanh Thu", Ngày: pctFor("doanh_thu", "day"), Tháng: pctFor("doanh_thu", "month"), Năm: pctFor("doanh_thu", "year") },
+    { name: "Tiêu Thụ", Ngày: pctFor("tieu_thu", "day"), Tháng: pctFor("tieu_thu", "month"), Năm: pctFor("tieu_thu", "year") },
   ];
 
   const khaiThacSites = (congTruongData?.khaiThac || []).map(s => ({ ...s, tenCongTruong: s.tenCongTruong, originalTenCongTruong: s.tenCongTruong }));
